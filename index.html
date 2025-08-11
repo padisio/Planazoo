@@ -1109,5 +1109,112 @@ async function doLogin(){
 })();
 </script>
 
+
+<!-- === Supabase auth + plan sync (non-intrusive) === -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/api-compound.js"></script>
+<script>
+(function(){
+  // Create client once (expects window.SUPABASE_URL / window.SUPABASE_ANON_KEY to be set somewhere else)
+  if (window.supabase && !window.__sb && window.SUPABASE_URL && window.SUPABASE_ANON_KEY){
+    window.__sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+  }
+  const SB = window.__sb || null;
+
+  // If Supabase exists, wire auth listener + magic link login + plan sync
+  if (SB){
+    // Session listener (returns from magic link)
+    SB.auth.onAuthStateChange(async (_event, session) => {
+      if (session && session.user){
+        try{
+          // Update local UI user
+          const name = session.user.email ? (session.user.email.split('@')[0]||'Usuario') : 'Usuario';
+          if (typeof setUser === 'function'){ setUser({ name, email: session.user.email || '' }); }
+          // Upsert profile
+          await SB.from('users').upsert({ id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name || null });
+          if (typeof closeLogin === 'function'){ closeLogin(); }
+          try { alert('Sesión iniciada'); } catch(e){}
+        }catch(e){ console.warn('Auth state post-actions error', e); }
+      }
+    });
+
+    // Replace doLogin with magic link flow
+    window.doLogin = async function(){
+      const e = document.querySelector('#le')?.value?.trim();
+      if(!e){ alert('Escribe tu email'); return; }
+      try{
+        await SB.auth.signInWithOtp({ email: e });
+        alert('Te he enviado un enlace de acceso. Abre tu correo y pulsa el botón para entrar.');
+      }catch(err){
+        alert('Error enviando enlace: '+(err?.message||err));
+      }
+    };
+
+    // Helper to sync a just-created local poll to Supabase (best-effort, no UI changes)
+    async function syncPlanToSupabase(p){
+      try{
+        const { data: { user: u } } = await SB.auth.getUser();
+        if(!u){ return; } // only sync if logged in
+        // 1) plan
+        const insPlan = await SB.from('plans').insert({
+          owner_id: u.id,
+          title: p.title,
+          city: (document.querySelector('#pc')?.value?.trim()||null),
+          when_ts: new Date(p.when).toISOString(),
+          deadline_ts: new Date(p.deadline).toISOString(),
+          collab: !!p.collab,
+          closed: !!p.closed,
+          cancelled: !!p.cancelled,
+          is_public: false
+        }).select().single();
+        if(insPlan.error) throw insPlan.error;
+        const plan = insPlan.data;
+        // 2) single block
+        const insBlock = await SB.from('plan_blocks').insert({ plan_id: plan.id, title: 'Bloque 1', sort_order: 1 }).select().single();
+        if(insBlock.error) throw insBlock.error;
+        const blockId = insBlock.data.id;
+        // 3) options
+        if (Array.isArray(p.options) && p.options.length){
+          const rows = p.options.map(o=>({
+            block_id: blockId,
+            text: o.text || o.t || '',
+            cat: (o.meta && o.meta.cat) ? o.meta.cat : null,
+            place: null,
+            price_num: null,
+            created_by: u.id
+          }));
+          const insOpts = await SB.from('block_options').insert(rows);
+          if(insOpts.error) throw insOpts.error;
+        }
+        console.log('✅ Plan sincronizado en Supabase', plan.id);
+      }catch(err){
+        console.warn('❌ Error al sincronizar plan en Supabase:', err);
+      }
+    }
+
+    // Wrap createShare to also sync to Supabase after local creation
+    if (typeof createShare === 'function'){
+      const __createShare = createShare;
+      window.createShare = function(){
+        // snapshot keys before
+        let beforeKeys = [];
+        try{ beforeKeys = Object.keys((JSON.parse(localStorage.getItem('pz_polls'))||{})); }catch(e){}
+        __createShare();
+        // find the new poll id
+        try{
+          const polls = JSON.parse(localStorage.getItem('pz_polls'))||{};
+          const newId = Object.keys(polls).find(k=>!beforeKeys.includes(k));
+          if(newId){
+            syncPlanToSupabase(polls[newId]);
+          }
+        }catch(e){ console.warn('Post-create sync check failed', e); }
+      }
+    }
+  } else {
+    console.info('Supabase no está configurado (falta SUPABASE_URL/ANON_KEY o el script de supabase). Se usa login local.');
+  }
+})();
+</script>
+
 </body>
 </html>
