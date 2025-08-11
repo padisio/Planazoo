@@ -604,6 +604,226 @@ async function doLogin(){
   })();
 </script>
 <script src="/api-compound.js"></script>
+<script>
+(function(){
+  if(!window.SB){ console.warn('Supabase no está inicializado'); return; }
+
+  const isUUID = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  const iso = (val)=> val ? new Date(val).toISOString() : new Date().toISOString();
+
+  // ========= 1) Crear plan compuesto (1 bloque por ahora) =========
+  const __createShare = window.createShare;
+  window.createShare = async function(){
+    // Si quieres seguir usando localStorage para tests,
+    // comenta el return y usamos el back remoto siempre.
+    // return __createShare && __createShare();
+
+    if(!guardDetails()) return;
+    if(!window.SB){ alert('Supabase no cargado'); return; }
+
+    // Requiere sesión (porque owner_id es el usuario actual)
+    const { data: userData } = await SB.auth.getUser();
+    const user = userData?.user;
+    if(!user){ openLogin(); alert('Inicia sesión para crear el plan'); return; }
+
+    const title = q('#pt').value.trim();
+    const city  = q('#pc').value.trim() || null;
+    const dlMin = Math.max(10, Math.min(1440, parseInt(q('#pl').value || '120',10)));
+    const whenTs = iso(q('#pd').value);                    // timestamptz
+    const deadlineTs = new Date(Date.now()+dlMin*60000).toISOString();
+
+    if(opts.length<1){ alert('Añade al menos 1 actividad'); return; }
+
+    // a) Crear plan (is_public=true temporal, hasta que gestiones invites)
+    const { data: plan, error: e1 } = await SB
+      .from('plans')
+      .insert({
+        owner_id: user.id,
+        title, city,
+        when_ts: whenTs,
+        deadline_ts: deadlineTs,
+        collab: true,
+        closed: false,
+        cancelled: false,
+        is_public: true
+      })
+      .select().single();
+    if(e1){ alert('Error creando plan: '+e1.message); return; }
+
+    // b) Crear bloque (Bloque 1)
+    const { data: block, error: e2 } = await SB
+      .from('plan_blocks')
+      .insert({
+        plan_id: plan.id,
+        title: 'Bloque 1',
+        sort_order: 1,
+        // Opcionalmente podrías usar starts_at/ends_at si tuvieras horas por bloque:
+        // starts_at: whenTs
+      })
+      .select().single();
+    if(e2){ alert('Error creando bloque: '+e2.message); return; }
+
+    // c) Crear opciones del bloque
+    const rows = opts.map(o=>({
+      block_id: block.id,
+      text: o.t,
+      cat: o.cat || null,
+      place: null,
+      price_num: null,
+      created_by: user.id
+    }));
+    const { error: e3 } = await SB.from('block_options').insert(rows);
+    if(e3){ alert('Error creando opciones: '+e3.message); return; }
+
+    // d) Ir a Votar (remoto)
+    location.hash = '#/votar/'+plan.id;
+    await renderVoteComposite(plan.id);
+    qq('.view').forEach(v=>v.classList.remove('on'));
+    q('#votar').classList.add('on');
+  };
+
+  // ========= 2) Votar (remoto, 1 bloque) =========
+  async function renderVoteComposite(planId){
+    // Cargar plan + bloque + opciones
+    const [{ data: plan }, { data: blocks }, { data: options }] = await Promise.all([
+      SB.from('plans').select('*').eq('id', planId).single(),
+      SB.from('plan_blocks').select('*').eq('plan_id', planId).order('sort_order'),
+      SB.from('block_options').select('*').in('block_id',
+        (await SB.from('plan_blocks').select('id').eq('plan_id',planId)).data?.map(b=>b.id)||[]
+      )
+    ]);
+
+    if(!plan){ alert('No existe'); tab('home'); return; }
+
+    q('#vt').textContent='Vota: '+plan.title;
+    q('#collab').style.display = plan.collab ? 'inline-block' : 'none';
+    q('#vn').value = localStorage.getItem('pz_nombre') || '';
+    q('#link').textContent = location.origin+location.pathname+'#/votar/'+planId;
+
+    const w=q('#vlist'); w.innerHTML='';
+    const closed = plan.closed || Date.now() >= new Date(plan.deadline_ts).getTime();
+
+    // Requisito de tu esquema: block_votes.voter_id (UUID) => hay que estar logueado
+    const { data: userData } = await SB.auth.getUser();
+    const user = userData?.user;
+    const ensureLogin = async ()=>{
+      if(!user){ openLogin(); throw new Error('Necesitas iniciar sesión para votar'); }
+      return user;
+    };
+
+    // Por ahora renderizamos solo el primer bloque (tu UI actual es de 1 lista)
+    const firstBlock = (blocks||[])[0];
+    const blockOpts = (options||[]).filter(o=>o.block_id===firstBlock?.id);
+
+    blockOpts.forEach(o=>{
+      const d=document.createElement('div');
+      d.className='opt';
+      d.innerHTML=`<div class='row'><div style='flex:1'>${o.text}</div><button class='btn s p'>Votar</button></div>`;
+      const b=d.querySelector('button');
+      b.disabled=closed;
+      b.onclick=async ()=>{
+        try{
+          await ensureLogin();
+          const n=q('#vn').value.trim();
+          if(!n){ alert('Pon tu nombre (solo etiqueta visual)'); return; }
+          localStorage.setItem('pz_nombre', n);
+          // Insertar voto (voter_id = user.id)
+          const { error } = await SB.from('block_votes').insert({
+            block_id: o.block_id,
+            option_id: o.id,
+            voter_id: user.id
+          });
+          if(error){ alert('No se pudo votar: '+error.message); return; }
+          location.hash='#/res/'+planId;
+          await renderResComposite(planId);
+          qq('.view').forEach(v=>v.classList.remove('on'));
+          q('#res').classList.add('on');
+        }catch(e){ console.warn(e); }
+      };
+      w.appendChild(d);
+    });
+
+    // temporizador
+    if(window.__tmr) clearInterval(window.__tmr);
+    window.__tmr = setInterval(()=>{
+      const r=Math.max(0, new Date(plan.deadline_ts).getTime() - Date.now());
+      q('#rem').textContent = (plan.closed?'Cerrada': Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s');
+    }, 500);
+  }
+
+  // ========= 3) Resultados (remoto, 1 bloque) =========
+  async function renderResComposite(planId){
+    const [{ data: plan }, { data: blocks }] = await Promise.all([
+      SB.from('plans').select('*').eq('id', planId).single(),
+      SB.from('plan_blocks').select('*').eq('plan_id', planId).order('sort_order')
+    ]);
+    if(!plan){ alert('No existe'); tab('home'); return; }
+
+    const firstBlock = (blocks||[])[0];
+    const [{ data: options }, { data: votes }] = await Promise.all([
+      SB.from('block_options').select('*').eq('block_id', firstBlock.id),
+      SB.from('block_votes').select('*').eq('block_id', firstBlock.id)
+    ]);
+
+    q('#rt').textContent='Resultado: '+plan.title;
+    q('#state').textContent=(plan.closed || Date.now() >= new Date(plan.deadline_ts).getTime())?'Cerrada':'Abierta';
+
+    const w=q('#rlist'); w.innerHTML='';
+    const countByOpt = Object.fromEntries(options.map(o=>[o.id,0]));
+    votes.forEach(v=>{ countByOpt[v.option_id]=(countByOpt[v.option_id]||0)+1; });
+
+    let sum=0, max=-1, win=null;
+    options.forEach(o=>{
+      const v = countByOpt[o.id]||0;
+      sum += v;
+      if(v>max){ max=v; win=o; }
+      const d=document.createElement('div');
+      d.className='opt';
+      d.innerHTML=`<div class='row' style='justify-content:space-between'><div>${o.text}</div><b>${v}</b></div>`;
+      w.appendChild(d);
+    });
+
+    const leaders = options.filter(o => (countByOpt[o.id]||0)===max);
+    if(leaders.length>1 && (plan.closed || Date.now() >= new Date(plan.deadline_ts).getTime())){
+      q('#tie').style.display='block';
+      const tw=q('#tieopts'); tw.innerHTML='';
+      leaders.forEach(o=>{ const d=document.createElement('div'); d.className='opt'; d.textContent=o.text; tw.appendChild(d); });
+      window.tie = leaders.map(o=>o.id);
+      q('#win').innerHTML='<small class=pill>Empate detectado</small>';
+    } else {
+      q('#tie').style.display='none';
+      q('#win').innerHTML=win?`<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`:'<small class=pill>Aún no hay votos</small>';
+    }
+  }
+
+  // ========= 4) Cerrar plan (remoto) =========
+  const __closeNow = window.closeNow;
+  window.closeNow = async function(){
+    const id = location.hash.split('/')[2];
+    if(isUUID(id)){
+      await SB.from('plans').update({ closed: true }).eq('id', id);
+      await renderResComposite(id);
+    } else {
+      return __closeNow && __closeNow();
+    }
+  };
+
+  // ========= 5) Enrutado: si id es UUID → usa remoto; si no, legacy =========
+  const __renderVote = window.renderVote;
+  window.renderVote = async function(){
+    const id = location.hash.split('/')[2];
+    if(isUUID(id)){ return renderVoteComposite(id); }
+    return __renderVote && __renderVote();
+  };
+
+  const __renderRes = window.renderRes;
+  window.renderRes = async function(){
+    const id = location.hash.split('/')[2];
+    if(isUUID(id)){ return renderResComposite(id); }
+    return __renderRes && __renderRes();
+  };
+})();
+</script>
 
 </body>
 </html>
