@@ -703,18 +703,20 @@ function setRating(n){
 })();
 </script>
 <script>
-  // Realtime en supabase-js v2
-  if (window.SB && SB.channel) {
-    const ch = SB.channel('plans-inserts');
-    ch.on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'plans'
-    }, (payload) => {
-      console.log('📥 Nuevo plan en Supabase:', payload.new);
-    });
-    ch.subscribe();
+try{
+  if (window.SB && typeof SB.channel === 'function') {
+    const ch = SB.channel('plans-inserts')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'plans' }, (payload) => {
+        console.log('📥 Nuevo plan en Supabase:', payload.new);
+      });
+
+    ch.subscribe((status) => console.log('[Realtime] status:', status));
+  } else {
+    console.log('[Realtime] SB no disponible o API channel no encontrada');
   }
+} catch (e) {
+  console.warn('[Realtime] desactivado:', e);
+}
 </script>
 </body>
 </html>
