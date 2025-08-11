@@ -1,13 +1,12 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+
+<html data-theme="light" lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Planazoo v9 (fases + login)</title>
-  <meta name="theme-color" content="#fff" id="meta-theme">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/favicon.ico">
-  <style>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.ico">
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+<title>Planazoo v9 (fases + login)</title><meta content="#fff" id="meta-theme" name="theme-color"/>
+<style>
 :root{--b:#6C4CF5;--b2:#7D5CF8;--bg:#faf9f7;--card:#fff;--line:#e6e6ea;--fg:#101423;--muted:#455065;--chip:#fff;--tab:#fff;--accent:#4a56ff}
 :root.dark{--bg:#0b0e14;--card:#121625;--line:#2a3247;--fg:#e8ecf7;--muted:#c7cfdb;--chip:#0f1423;--tab:#0f1423;--accent:#a8b6ff}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg)}
@@ -36,13 +35,17 @@
 .sheet{background:var(--card);border:1px solid var(--line);border-radius:18px;max-width:640px;width:100%;padding:16px}
 svg.logo{width:34px;height:34px;border-radius:10px}svg.lg{width:64px;height:64px;border-radius:16px}
 a.link{color:var(--accent);text-decoration:underline;word-break:break-all}
+/* Wizard dentro de Crear */
 .steps{display:flex;gap:8px;align-items:center;margin:8px 0}
 .step{display:flex;align-items:center;gap:8px}
 .dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:800;color:var(--muted);background:var(--chip)}
 .step.on .dot{border-color:var(--b);background:var(--b);color:#fff}
 .step.done .dot{border-color:#3dd68c;background:#3dd68c;color:#0a121a}
 .substep{display:none}.substep.on{display:block}
+/* Chips con avatar */
 .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:var(--chip)}
+
+/* === Mejoras portrait / mobile & contraste sin romper interacciones === */
 @media (max-width: 520px){
   .content{max-width:520px;padding:12px;padding-bottom:96px}
   .row{flex-direction:column;align-items:stretch}
@@ -52,216 +55,250 @@ a.link{color:var(--accent);text-decoration:underline;word-break:break-all}
   .appbar{gap:8px;padding:10px 12px}
   #crear .card{overflow:hidden}
 }
+
+/* Mejor legibilidad en oscuro para botones y pills más usados */
 :root.dark .btn{background:#121a2a;border-color:#3b4763;color:#e8ecf7}
 :root.dark .btn.p{background:linear-gradient(135deg,var(--b),var(--b2));border:none;color:#fff}
 :root.dark .pill{background:#0f1423;border-color:#3b4763;color:#cfe2ff}
 :root.dark .opt{background:#0f1423;border-color:#3b4763}
 :root.dark .input, :root.dark select, :root.dark textarea{background:#0f1423;border-color:#3b4763;color:#e8ecf7}
 .btn:focus{outline:2px solid color-mix(in oklab,var(--b) 40%, transparent); outline-offset:2px}
+
+
+/* --- Ajustes solicitados --- */
+/* Estrellas en línea y amarillas al seleccionar */
 #rst{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
 .star{font-size:26px;line-height:1;display:inline-block;color:#a0a7b4}
 .star.on{color:#FFC400;filter:none}
+
+/* Grupo de botones compacto en historial */
 .btngrp{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+
+/* === FIXES v4 === */
 .rating, .rating-stars, #ratingStars, #rst, .stars { display:flex; gap:8px; align-items:center; flex-wrap:nowrap }
 .star, .rating .star, .stars .star { font-size:26px; line-height:1; display:inline-block; color:#a0a7b4; cursor:pointer }
 .star.on, .star.active { color:#FFC400 }
+
 .btngrp { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-items:center }
 .card .btngrp .btn { white-space:nowrap }
+
 .vote-actions, .actions, #voteActions { display:flex; flex-wrap:wrap; gap:8px; align-items:center }
 .vote-actions .btn, .actions .btn { min-width:0; flex:0 0 auto }
 .vote-actions .link, .actions .link { word-break:break-word; overflow-wrap:anywhere }
+
 .modal { position:fixed; inset:0; overflow:auto }
 .modal .sheet { max-height:90vh; overflow:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain }
 body.modal-open { overflow:hidden }
+
 .container, .sheet, .page { overflow-x:hidden }
-  </style>
+
+</style>
 </head>
 <body>
 <div class="app">
-  <!-- Sprite SVG (tu logo actual) -->
-  <svg style="position:absolute;width:0;height:0">
-    <symbol id="m" viewBox="0 0 512 512">
-      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6C4CF5"/><stop offset="1" stop-color="#7D5CF8"/></linearGradient></defs>
-      <rect width="512" height="512" rx="110" fill="url(#g)"/>
-      <g transform="translate(86,86)">
-        <path d="M246 84c9-10 14-21 14-31 0-17-19-26-37-20-16 6-31 12-51 12s-35-6-51-12c-18-6-37 3-37 20 0 10 5 21 14 31-26 20-42 50-42 85 0 72 58 130 130 130s130-58 130-130c0-35-16-65-42-85z" fill="#2f2731"/>
-        <circle cx="36" cy="160" r="38" fill="#F6D2A0"/><circle cx="320" cy="160" r="38" fill="#F6D2A0"/>
-        <path d="M96 156c0 50 42 90 96 90s96-40 96-90c0-42-43-78-96-78s-96 36-96 78z" fill="#F6D2A0"/>
-        <circle cx="176" cy="168" r="12" fill="#0f0c10"/><circle cx="208" cy="168" r="12" fill="#0f0c10"/><circle cx="192" cy="188" r="6" fill="#2f2731"/>
-        <path d="M164 214c18 12 38 12 56 0" stroke="#2f2731" stroke-width="8" fill="none" stroke-linecap="round"/>
-      </g>
-    </symbol>
-  </svg>
 
-  <div class="appbar">
-    <svg class="logo" viewBox="0 0 512 512"><use href="#m"/></svg><div class="t">Planazoo</div>
-    <div class="sp"></div>
-    <button id="th" class="ib" title="Tema">🌓</button>
-    <button class="ib" onclick="openPrefs()" title="Preferencias">⚙️</button>
-    <button id="abtn" class="ib avatarbtn" title="Cuenta">
-      <div id="aico" class="avatar">?</div><small id="aname" class="pill">Invitado</small>
-    </button>
-    <div id="amenu" class="menu">
-      <a href="#" onclick="openLogin();return false;">👤 Iniciar sesión</a>
-      <a href="#" onclick='tab("stats");closeMenu();return false;'>📊 Estadísticas</a>
-      <a href="#" onclick="logout();return false;">↩️ Cerrar sesión</a>
-    </div>
-  </div>
+<svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0">
+<symbol id="m" preserveaspectratio="xMidYMid meet" viewbox="0 0 512 512">
+<g transform="translate(-0.0,-0.0) scale(1.5483714881906432,1.6551902498949342)">
+<defs>
+<style>
+      .st0 {
+        fill: #6a5af3;
+      }
 
-  <div class="content">
-    <section id="home" class="view on">
-      <div class="card">
-        <div class="row">
-          <svg class="lg" viewBox="0 0 512 512"><use href="#m"/></svg>
-          <div><h2 style="margin:0">Decide planes en grupo</h2><small class="pill">Rápido y sin discusiones</small></div>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn p" onclick='tab("crear")'>Crear plan</button>
-          <span class="pill">🔔 Recordatorios</span><span class="pill">✨ Sugerencias</span>
-        </div>
-      </div>
-      <div class="card" style="margin-top:12px"><h3>Lo mejor de la comunidad</h3><div id="homec" class="grid cards"></div></div>
-    </section>
+      .st1 {
+        stroke-width: .25px;
+      }
 
-    <!-- CREAR (wizard en 4 fases) -->
-    <section id="crear" class="view">
-      <div class="card">
-        <h2>Crear plan</h2>
-        <div class="steps">
-          <div class="step" data-s="1"><div class="dot">1</div><small class="pill">Detalles</small></div>
-          <div class="step" data-s="2"><div class="dot">2</div><small class="pill">Invitados</small></div>
-          <div class="step" data-s="3"><div class="dot">3</div><small class="pill">Actividades</small></div>
-          <div class="step" data-s="4"><div class="dot">4</div><small class="pill">Compartir</small></div>
-        </div>
+      .st1, .st2, .st3 {
+        fill: #8c583d;
+      }
 
-        <!-- Paso 1: detalles -->
-        <div id="s1" class="substep">
-          <div class="row">
-            <div class="col" style="flex:2"><label>Título</label><input id="pt" class="input" value="Planazoo de hoy"></div>
-            <div class="col" style="flex:1"><label>Fecha y hora</label><input id="pd" class="input" type="datetime-local"></div>
-          </div>
-          <div class="row" style="margin-top:6px">
-            <div class="col" style="flex:1"><label>Ciudad</label><input id="pc" class="input" placeholder="Ciudad"></div>
-            <div class="col" style="flex:1"><label>Tiempo para votar (min)</label><input id="pl" class="input" type="number" min="10" max="1440" value="120"></div>
-          </div>
-        </div>
+      .st1, .st4, .st5, .st3 {
+        stroke: #000;
+      }
 
-        <!-- Paso 2: invitados -->
-        <div id="s2" class="substep">
-          <h3>Invitar amigos</h3>
-          <div id="chips" class="row"></div>
-          <div class="row">
-            <input id="fnew" class="input" placeholder="Añadir amigo (@usuario o nombre)">
-            <button class="btn" onclick="addFriendInput()">Añadir</button>
-            <button class="btn" onclick="manageFriends()">Gestionar</button>
-          </div>
-        </div>
+      .st1, .st5 {
+        stroke-miterlimit: 10;
+      }
 
-        <!-- Paso 3: actividades (sugerencias, favs, manual) -->
-        <div id="s3" class="substep">
-          <div class="row"><button class="btn s" onclick="openSug()" onclick="openMSug(); genSugUI()">Generar sugerencias</button><small class="pill">Según preferencias</small></div>
-          <div id="sugs" class="grid cards" style="margin-top:12px"></div>
-          <h3 style="margin-top:14px">Opciones del plan</h3>
-          <div id="opts" class="grid"></div>
-          <h3 style="margin-top:14px">Tus favoritos</h3>
-          <div id="favpick" class="grid cards"></div>
-          <div class="row" style="margin-top:8px"><button class="btn" onclick="addManual()">+ Opción manual</button></div>
-        </div>
+      .st6 {
+        fill: #fff;
+      }
 
-        <!-- Paso 4: compartir -->
-        <div id="s4" class="substep">
-          <h3>Resumen</h3>
-          <div id="sum" class="grid cards"></div>
-          <div class="row" style="margin-top:10px">
-            <button class="btn p" onclick="createShare()">Crear y compartir</button>
-            <button class="btn" onclick="sharePreview()">Vista previa de enlace</button>
-          </div>
-        </div>
+      .st7 {
+        fill: #ffd597;
+      }
 
-        <hr>
-        <div class="row">
-          <button id="pb" class="btn s" onclick="prevStep()">← Atrás</button>
-          <div style="flex:1"></div>
-          <button id="pn" class="btn s p" onclick="nextStep()">Continuar →</button>
-        </div>
-      </div>
-    </section>
+      .st4 {
+        fill: none;
+      }
 
-    <section id="votar" class="view"><div class="card">
-      <div class="row"><h2 id="vt">Vota</h2><span class="pill" id="collab">Colaborativo</span></div>
-      <small>Se cierra en: <span id="rem">—</span></small>
-      <div class="row" style="margin-top:12px"><input id="vn" class="input" placeholder="Tu nombre"></div>
-      <hr>
-      <div id="vlist" class="grid"></div>
-      <div class="row" style="margin-top:8px"><button class="btn s" onclick="contrib()">+ Añadir opción</button></div>
-      <hr>
-      <div class="row"><button class="btn p" onclick="goRes()">Ver resultados</button><button class="btn" onclick="share()">Compartir</button><small>Enlace: <span id="link" class="link"></span></small></div>
-    </div></section>
+      .st4, .st5, .st3 {
+        stroke-width: 8px;
+      }
 
-    <section id="res" class="view"><div class="card">
-      <div class="row"><h2 id="rt">Resultado</h2><span class="pill" id="state">—</span><div style="flex:1"></div><button class="btn" onclick="closeNow()">Cerrar</button></div><hr>
-      <div id="rlist" class="grid"></div><hr><div id="win"></div>
-      <div id="tie" style="display:none"><hr><h3>⚖️ Desempate</h3><div class="row"><button class="btn" onclick="tRand()">Aleatorio</button><button class="btn" onclick="tManual()">Elegir manual</button></div><div id="tieopts" class="grid cards" style="margin-top:10px"></div></div>
-      <hr><div class="row"><button class="btn" onclick="share()">Compartir</button><button class="btn" onclick="publish()">Publicar en comunidad</button></div>
-    </div></section>
+      .st4, .st3 {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
 
-    <section id="hist" class="view"><div class="card"><h2>Historial</h2><div id="hlist" class="grid cards"></div></div></section>
-    <section id="favs" class="view"><div class="card"><h2>Favoritos</h2><div class="row"><input id="fvi" class="input" placeholder="Ej. Restaurante X"><button class="btn p" onclick="addFav()">Guardar</button></div><div id="fv" class="grid cards" style="margin-top:12px"></div></div></section>
-    <section id="comm" class="view"><div class="card"><h2>Comunidad</h2><div id="clist" class="grid cards"></div></div></section>
+      .st5 {
+        fill: #fbca88;
+      }
+    </style>
+</defs><rect class="st0" height="269" rx="53.67" ry="53.67" width="275" x="26.97" y="27.06"></rect><path class="st5" d="M84.09,134.14c-5.62-1.66-11.54-1.6-17.1.57-15.27,5.96-21.99,25.48-15.02,43.6,6.24,16.23,21.35,23.83,35.41,21.38l15.23-26.39-18.52-39.15Z"></path><path class="st5" d="M247.04,134.68c5.62-1.66,11.54-1.6,17.1.57,15.27,5.96,21.99,25.48,15.02,43.6-6.24,16.23-21.35,23.83-35.41,21.38l-16.58-26,19.87-39.55Z"></path><g>
+<path class="st2" d="M165.58,266.11c-41.58,0-75.42-27.14-75.42-60.5,0-6.37,1.25-12.68,3.72-18.74l.72-1.78-.93-1.68c-6.09-10.93-9.18-22.73-9.18-35.09,0-20.02,8.37-38.5,23.58-52.05,15.13-13.48,35.55-20.9,57.5-20.9s42.37,7.42,57.5,20.9c15.21,13.55,23.58,32.03,23.58,52.05,0,12.36-3.09,24.16-9.18,35.09l-.93,1.68.72,1.78c2.47,6.07,3.72,12.37,3.72,18.74,0,33.36-33.83,60.5-75.42,60.5Z"></path>
+<path d="M165.58,79.37c20.97,0,40.44,7.06,54.84,19.89,14.34,12.78,22.24,30.2,22.24,49.06,0,11.67-2.92,22.82-8.67,33.14l-1.87,3.35,1.45,3.56c2.27,5.59,3.43,11.39,3.43,17.24,0,31.15-32.04,56.5-71.42,56.5s-71.42-25.35-71.42-56.5c0-5.85,1.15-11.65,3.43-17.24l1.45-3.56-1.87-3.35c-5.75-10.32-8.67-21.47-8.67-33.14,0-18.86,7.9-36.28,22.24-49.06,14.4-12.83,33.87-19.89,54.84-19.89M165.58,71.37c-46.99,0-85.08,32.8-85.08,76.96,0,13.37,3.51,25.96,9.68,37.04-2.59,6.37-4.02,13.17-4.02,20.25,0,35.62,35.56,64.5,79.42,64.5s79.42-28.88,79.42-64.5c0-7.08-1.42-13.88-4.02-20.25,6.17-11.08,9.68-23.67,9.68-37.04,0-44.16-38.09-76.96-85.08-76.96h0Z"></path>
+</g><g>
+<path class="st7" d="M165.69,266.11c-32.85,0-59.58-23.21-59.58-51.74,0-10.19,3.42-20.05,9.88-28.52l2.56-3.36-3.49-2.38c-9.59-6.52-15.32-17.33-15.32-28.91,0-19.26,15.67-34.93,34.93-34.93,10.75,0,20.74,4.85,27.42,13.31l3.14,3.97,3.14-3.97c6.68-8.46,16.67-13.31,27.42-13.31,19.26,0,34.93,15.67,34.93,34.93,0,11.31-5.52,21.97-14.78,28.52l-3.42,2.42,2.57,3.3c6.66,8.56,10.18,18.56,10.18,28.92,0,28.53-26.73,51.74-59.58,51.74Z"></path>
+<path d="M195.78,120.28c17.06,0,30.93,13.88,30.93,30.93,0,10.01-4.89,19.45-13.09,25.26l-6.83,4.84,5.14,6.61c6.11,7.85,9.34,17,9.34,26.46,0,26.33-24.93,47.74-55.58,47.74s-55.58-21.42-55.58-47.74c0-9.3,3.13-18.32,9.06-26.09l5.12-6.72-6.99-4.75c-8.5-5.78-13.57-15.35-13.57-25.6,0-17.06,13.88-30.93,30.93-30.93,9.52,0,18.37,4.3,24.28,11.79l6.28,7.95,6.28-7.95c5.92-7.49,14.77-11.79,24.28-11.79M195.78,112.28c-12.4,0-23.43,5.8-30.56,14.83-7.13-9.03-18.16-14.83-30.56-14.83-21.5,0-38.93,17.43-38.93,38.93,0,13.4,6.77,25.21,17.07,32.22-6.75,8.85-10.7,19.49-10.7,30.94,0,30.79,28.47,55.74,63.58,55.74s63.58-24.96,63.58-55.74c0-11.64-4.07-22.44-11.03-31.37,9.96-7.05,16.47-18.65,16.47-31.78,0-21.5-17.43-38.93-38.93-38.93h0Z"></path>
+</g><path d="M82.36,156.71s-11.17,1.44-17.28,13.67c0,0-4.39-15.06,16.83-21.5l.44,7.83Z"></path><path d="M248.87,156.86s11.17,1.44,17.28,13.67c0,0,4.39-15.06-16.83-21.5l-.44,7.83Z"></path><g>
+<path d="M135.26,168.06c-6.04,0-10.96-5.7-10.96-12.71s4.92-12.71,10.96-12.71,10.96,5.7,10.96,12.71-4.92,12.71-10.96,12.71Z"></path>
+<path d="M135.26,146.64c3.77,0,6.96,3.99,6.96,8.71s-3.19,8.71-6.96,8.71-6.96-3.99-6.96-8.71,3.19-8.71,6.96-8.71M135.26,138.64c-8.26,0-14.96,7.48-14.96,16.71s6.7,16.71,14.96,16.71,14.96-7.48,14.96-16.71-6.7-16.71-14.96-16.71h0Z"></path>
+</g><ellipse class="st6" cx="140.43" cy="149.87" rx="5.04" ry="4.43" transform="translate(-26.49 269.53) rotate(-82.5)"></ellipse><g>
+<path d="M195.06,168.06c-6.04,0-10.96-5.7-10.96-12.71s4.92-12.71,10.96-12.71,10.96,5.7,10.96,12.71-4.92,12.71-10.96,12.71Z"></path>
+<path d="M195.06,146.64c3.77,0,6.96,3.99,6.96,8.71s-3.19,8.71-6.96,8.71-6.96-3.99-6.96-8.71,3.19-8.71,6.96-8.71M195.06,138.64c-8.26,0-14.96,7.48-14.96,16.71s6.7,16.71,14.96,16.71,14.96-7.48,14.96-16.71-6.7-16.71-14.96-16.71h0Z"></path>
+</g><ellipse class="st6" cx="200.23" cy="149.87" rx="5.04" ry="4.43" transform="translate(25.5 328.82) rotate(-82.5)"></ellipse><circle cx="157.22" cy="190.14" r="4.39"></circle><circle cx="174.44" cy="190.14" r="4.39"></circle><path class="st4" d="M185.48,188.19c.06-.46.11-.92.11-1.4,0-6.13-5.38-11.1-12.02-11.1-2.93,0-5.61.97-7.69,2.58-2.08-1.61-4.76-2.58-7.69-2.58-6.64,0-12.02,4.97-12.02,11.1,0,.47.04.94.11,1.4"></path><path class="st4" d="M124.25,205.22c1.81,12.93,19.41,23.08,40.88,23.08s39.07-10.15,40.88-23.08"></path><path class="st4" d="M124.25,205.22"></path><path class="st4" d="M206.01,205.22"></path><path class="st2" d="M179.64,52.04c-5.62-.77-13.39,9.66-18.97,18.66-1.11-3.39-2.86-7.34-5.2-8.19-4.25-1.56-10.08,11.74-11.5,17.82-.92,3.96,4.73,5.73,8.79,6.49-.92,5.68-.18,14.65,18.71,1.01,25.67-18.53,17.92-34.44,8.17-35.78Z"></path><path class="st1" d="M143.97,77.71c-.06.32-.1.63-.1.93"></path><path class="st3" d="M178.54,84.75c16.04-15.23,10.73-31.55,1.65-32.71-6.04-.77-12.25,12.21-18.26,21.2-1.19-3.39-4.16-9.88-6.67-10.74-4.57-1.56-9.77,11.74-11.3,17.82"></path>
+</g>
+</symbol>
+</svg>
 
-    <!-- Stats (acceso desde menú) -->
-    <section id="stats" class="view"><div class="card"><h2>Estadísticas</h2><div id="sw" class="grid"></div></div></section>
-
-    <section id="prefs" class="view"><div class="card"><h2>Preferencias</h2>
-      <div class="row">
-        <div class="col" style="flex:1"><label>Ciudad</label><input id="pcity" class="input"></div>
-        <div class="col" style="flex:1"><label>Presupuesto</label><select id="pbud"><option value="bajo">Bajo</option><option value="medio" selected>Medio</option><option value="alto">Alto</option></select></div>
-      </div>
-      <h3>Intereses</h3><div id="pints" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))"></div>
-      <div class="row" style="margin-top:12px"><button class="btn p" onclick="savePrefs()">Guardar</button><button class="btn" onclick='tab("home")'>Cancelar</button></div>
-    </div></section>
-  </div>
-
-  <nav class="tabbar">
-    <div class="tab on" data-t="home"><div>🏠</div><small>Inicio</small></div>
-    <div class="tab" data-t="crear"><div>➕</div><small>Crear</small></div>
-    <div class="tab" data-t="hist"><div>🕘</div><small>Historial</small></div>
-    <div class="tab" data-t="favs"><div>⭐</div><small>Favoritos</small></div>
-    <div class="tab" data-t="comm"><div>🌍</div><small>Comunidad</small></div>
-  </nav>
-
-  <!-- Modales -->
-  <div class="modal" id="mf"><div class="sheet"><div class="row"><h3>Gestionar amigos</h3><div style="flex:1"></div><button class="btn s" onclick="closeMF()">Cerrar</button></div><div class="row" style="margin-top:6px"><input id="mfnew" class="input" placeholder="Nombre o @usuario"><button class="btn" onclick="addFriendModal()">Añadir</button></div><div id="mfl" class="grid cards" style="margin-top:12px"></div></div></div>
-
-  <div class="modal" id="mr"><div class="sheet"><div class="row"><h3>Valorar plan</h3><div style="flex:1"></div><button class="btn s" onclick="closeMR()">Cerrar</button></div><div class="row" id="rst"></div><div class="col" style="margin-top:6px"><label>Comentario</label><textarea id="rc" rows="3"></textarea></div><div class="row" style="margin-top:8px"><button class="btn p" onclick="saveRate()">Guardar valoración</button></div></div></div>
-
-  <div class="modal" id="msug">
-    <div class="sheet">
-      <div class="row">
-        <h3>Sugerencias</h3>
-        <div style="flex:1"></div>
-        <button class="btn s" onclick="closeMSug()">Cerrar</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button class="btn s p" onclick="genSugUI()">↻ Generar más</button>
-        <button class="btn s" onclick="addManual()">+ Añadir manual</button>
-      </div>
-      <div id="sugwrap" class="grid cards" style="margin-top:12px"></div>
-      <small class="pill" style="margin-top:8px;display:inline-block">Puedes añadir varias sin cerrar este modal.</small>
-    </div>
-  </div>
-
-  <div class="modal" id="ml"><div class="sheet">
-    <div class="row"><h3>Iniciar sesión</h3><div style="flex:1"></div><button class="btn s" onclick="closeLogin()">Cerrar</button></div>
-    <div class="row">
-      <div class="col" style="flex:1"><label>Email</label><input id="le" class="input" type="email" placeholder="tucorreo@email.com"></div>
-    </div>
-    <div class="row" style="margin-top:8px"><button class="btn p" onclick="doLogin()">Entrar</button><button class="btn" onclick="demoLogin()">Demo</button></div>
-  </div></div>
-
+<div class="appbar">
+<svg class="logo" viewbox="0 0 512 512"><use href="#m"></use></svg><div class="t">Planazoo</div>
+<div class="sp"></div>
+<button class="ib" id="th" title="Tema">🌓</button>
+<button class="ib" onclick="openPrefs()" title="Preferencias">⚙️</button>
+<button class="ib avatarbtn" id="abtn" title="Cuenta">
+<div class="avatar" id="aico">?</div><small class="pill" id="aname">Invitado</small>
+</button>
+<div class="menu" id="amenu">
+<a href="#" onclick="openLogin();return false;">👤 Iniciar sesión</a>
+<a href="#" onclick='tab("stats");closeMenu();return false;'>📊 Estadísticas</a>
+<a href="#" onclick="logout();return false;">↩️ Cerrar sesión</a>
 </div>
-
-<!-- ====== JS de la app ====== -->
+</div>
+<div class="content">
+<section class="view on" id="home">
+<div class="card"><div class="row">
+<svg class="lg" viewbox="0 0 512 512"><use href="#m"></use></svg><div><h2 style="margin:0">Decide planes en grupo</h2><small class="pill">Rápido y sin discusiones</small></div>
+</div><div class="row" style="margin-top:8px"><button class="btn p" onclick='tab("crear")'>Crear plan</button><span class="pill">🔔 Recordatorios</span><span class="pill">✨ Sugerencias</span></div></div>
+<div class="card" style="margin-top:12px"><h3>Lo mejor de la comunidad</h3><div class="grid cards" id="homec"></div></div>
+</section>
+<!-- CREAR (wizard en 4 fases) -->
+<section class="view" id="crear">
+<div class="card">
+<h2>Crear plan</h2>
+<div class="steps">
+<div class="step" data-s="1"><div class="dot">1</div><small class="pill">Detalles</small></div>
+<div class="step" data-s="2"><div class="dot">2</div><small class="pill">Invitados</small></div>
+<div class="step" data-s="3"><div class="dot">3</div><small class="pill">Actividades</small></div>
+<div class="step" data-s="4"><div class="dot">4</div><small class="pill">Compartir</small></div>
+</div>
+<!-- Paso 1: detalles -->
+<div class="substep" id="s1">
+<div class="row">
+<div class="col" style="flex:2"><label>Título</label><input class="input" id="pt" value="Planazoo de hoy"/></div>
+<div class="col" style="flex:1"><label>Fecha y hora</label><input class="input" id="pd" type="datetime-local"/></div>
+</div>
+<div class="row" style="margin-top:6px">
+<div class="col" style="flex:1"><label>Ciudad</label><input class="input" id="pc" placeholder="Ciudad"/></div>
+<div class="col" style="flex:1"><label>Tiempo para votar (min)</label><input class="input" id="pl" max="1440" min="10" type="number" value="120"/></div>
+</div>
+</div>
+<!-- Paso 2: invitados -->
+<div class="substep" id="s2">
+<h3>Invitar amigos</h3>
+<div class="row" id="chips"></div>
+<div class="row"><input class="input" id="fnew" placeholder="Añadir amigo (@usuario o nombre)"/><button class="btn" onclick="addFriendInput()">Añadir</button><button class="btn" onclick="manageFriends()">Gestionar</button></div>
+</div>
+<!-- Paso 3: actividades (sugerencias, favs, manual) -->
+<div class="substep" id="s3">
+<div class="row"><button class="btn s" onclick="openMSug(); genSugUI()">Generar sugerencias</button><small class="pill">Según preferencias</small></div>
+<div class="grid cards" id="sugs" style="margin-top:12px"></div>
+<h3 style="margin-top:14px">Opciones del plan</h3>
+<div class="grid" id="opts"></div>
+<h3 style="margin-top:14px">Tus favoritos</h3>
+<div class="grid cards" id="favpick"></div>
+<div class="row" style="margin-top:8px"><button class="btn" onclick="addManual()">+ Opción manual</button></div>
+</div>
+<!-- Paso 4: compartir -->
+<div class="substep" id="s4">
+<h3>Resumen</h3>
+<div class="grid cards" id="sum"></div>
+<div class="row" style="margin-top:10px">
+<button class="btn p" onclick="createShare()">Crear y compartir</button>
+<button class="btn" onclick="sharePreview()">Vista previa de enlace</button>
+</div>
+</div>
+<hr/>
+<div class="row">
+<button class="btn s" id="pb" onclick="prevStep()">← Atrás</button>
+<div style="flex:1"></div>
+<button class="btn s p" id="pn" onclick="nextStep()">Continuar →</button>
+</div>
+</div>
+</section>
+<section class="view" id="votar"><div class="card">
+<div class="row"><h2 id="vt">Vota</h2><span class="pill" id="collab">Colaborativo</span></div>
+<small>Se cierra en: <span id="rem">—</span></small><div class="row" style="margin-top:12px"><input class="input" id="vn" placeholder="Tu nombre"/></div><hr/>
+<div class="grid" id="vlist"></div><div class="row" style="margin-top:8px"><button class="btn s" onclick="contrib()">+ Añadir opción</button></div><hr/>
+<div class="row"><button class="btn p" onclick="goRes()">Ver resultados</button><button class="btn" onclick="share()">Compartir</button><small>Enlace: <span class="link" id="link"></span></small></div>
+</div></section>
+<section class="view" id="res"><div class="card">
+<div class="row"><h2 id="rt">Resultado</h2><span class="pill" id="state">—</span><div style="flex:1"></div><button class="btn" onclick="closeNow()">Cerrar</button></div><hr/>
+<div class="grid" id="rlist"></div><hr/><div id="win"></div>
+<div id="tie" style="display:none"><hr/><h3>⚖️ Desempate</h3><div class="row"><button class="btn" onclick="tRand()">Aleatorio</button><button class="btn" onclick="tManual()">Elegir manual</button></div><div class="grid cards" id="tieopts" style="margin-top:10px"></div></div>
+<hr/><div class="row"><button class="btn" onclick="share()">Compartir</button><button class="btn" onclick="publish()">Publicar en comunidad</button></div>
+</div></section>
+<section class="view" id="hist"><div class="card"><h2>Historial</h2><div class="grid cards" id="hlist"></div></div></section>
+<section class="view" id="favs"><div class="card"><h2>Favoritos</h2><div class="row"><input class="input" id="fvi" placeholder="Ej. Restaurante X"/><button class="btn p" onclick="addFav()">Guardar</button></div><div class="grid cards" id="fv" style="margin-top:12px"></div></div></section>
+<section class="view" id="comm"><div class="card"><h2>Comunidad</h2><div class="grid cards" id="clist"></div></div></section>
+<!-- Stats se oculta del tabbar y se accede desde el menú de avatar -->
+<section class="view" id="stats"><div class="card"><h2>Estadísticas</h2><div class="grid" id="sw"></div></div></section>
+<section class="view" id="prefs"><div class="card"><h2>Preferencias</h2>
+<div class="row"><div class="col" style="flex:1"><label>Ciudad</label><input class="input" id="pcity"/></div>
+<div class="col" style="flex:1"><label>Presupuesto</label><select id="pbud"><option value="bajo">Bajo</option><option selected="" value="medio">Medio</option><option value="alto">Alto</option></select></div></div>
+<h3>Intereses</h3><div class="grid" id="pints" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))"></div>
+<div class="row" style="margin-top:12px"><button class="btn p" onclick="savePrefs()">Guardar</button><button class="btn" onclick='tab("home")'>Cancelar</button></div>
+</div></section>
+</div>
+<nav class="tabbar">
+<div class="tab on" data-t="home"><div>🏠</div><small>Inicio</small></div>
+<div class="tab" data-t="crear"><div>➕</div><small>Crear</small></div>
+<div class="tab" data-t="hist"><div>🕘</div><small>Historial</small></div>
+<div class="tab" data-t="favs"><div>⭐</div><small>Favoritos</small></div>
+<div class="tab" data-t="comm"><div>🌍</div><small>Comunidad</small></div>
+<!-- ✂️ pestaña Stats eliminada del tabbar -->
+</nav>
+<!-- Gestión amigos -->
+<div class="modal" id="mf"><div class="sheet"><div class="row"><h3>Gestionar amigos</h3><div style="flex:1"></div><button class="btn s" onclick="closeMF()">Cerrar</button></div><div class="row" style="margin-top:6px"><input class="input" id="mfnew" placeholder="Nombre o @usuario"/><button class="btn" onclick="addFriendModal()">Añadir</button></div><div class="grid cards" id="mfl" style="margin-top:12px"></div></div></div>
+<!-- Valorar -->
+<div class="modal" id="mr"><div class="sheet"><div class="row"><h3>Valorar plan</h3><div style="flex:1"></div><button class="btn s" onclick="closeMR()">Cerrar</button></div><div class="row" id="rst"></div><div class="col" style="margin-top:6px"><label>Comentario</label><textarea id="rc" rows="3"></textarea></div><div class="row" style="margin-top:8px"><button class="btn p" onclick="saveRate()">Guardar valoración</button></div></div></div>
+<!-- Sugerencias (modal) -->
+<div class="modal" id="msug">
+<div class="sheet">
+<div class="row">
+<h3>Sugerencias</h3>
+<div style="flex:1"></div>
+<button class="btn s" onclick="closeMSug()">Cerrar</button>
+</div>
+<div class="row" style="margin-top:6px">
+<button class="btn s p" onclick="genSugUI()">↻ Generar más</button>
+<button class="btn s" onclick="addManual()">+ Añadir manual</button>
+</div>
+<div class="grid cards" id="sugwrap" style="margin-top:12px"></div>
+<small class="pill" style="margin-top:8px;display:inline-block">Puedes añadir varias sin cerrar este modal.</small>
+</div>
+</div>
+<!-- Login -->
+<div class="modal" id="ml"><div class="sheet"><div class="row"><h3>Iniciar sesión</h3><div style="flex:1"></div><button class="btn s" onclick="closeLogin()">Cerrar</button></div>
+<div class="row"><div class="col" style="flex:1"><label>Nombre</label><input class="input" id="ln" placeholder="Tu nombre"/></div>
+<div class="col" style="flex:1"><label>Email</label><input class="input" id="le" placeholder="tucorreo@email.com" type="email"/></div></div>
+<div class="row" style="margin-top:8px"><button class="btn p" onclick="doLogin()">Entrar</button><button class="btn" onclick="demoLogin()">Demo</button></div>
+</div></div>
+</div>
 <script>
 /* ====== Constantes y utilidades ====== */
 const K={POLLS:'pz_polls',PREFS:'pz_prefs',FAVS:'pz_favs',STATS:'pz_stats',FRI:'pz_friends_v2',COMM:'pz_comm',RATE:'pz_ratings',USER:'pz_user'}
@@ -272,20 +309,20 @@ const U=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){retur
 const q=s=>document.querySelector(s), qq=s=>Array.from(document.querySelectorAll(s)), uid=()=>Math.random().toString(36).slice(2,10), now=()=>Date.now(), fmt=ts=>new Date(ts).toLocaleString(), toLocal=ts=>new Date(ts-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)
 const icon=c=>({gastronomia:'🍽',musica:'🎵',cine:'🎬',deporte:'⚽',naturaleza:'🌿',cultura:'🎨',juegos:'🎮'}[c]||'✨')
 
-/* ====== Tema ====== */
+/* ====== Tema (mejor contraste en oscuro) ====== */
 document.getElementById('th').onclick=()=>{document.documentElement.classList.toggle('dark');SVE('pz_theme',document.documentElement.classList.contains('dark')?'dark':'light')}
-;(function(){const s=U('pz_theme',null)||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); if(s==='dark') document.documentElement.classList.add('dark')})()
+;(function(){const s=U('pz_theme',null)|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); if(s==='dark') document.documentElement.classList.add('dark')})()
 
-/* ====== Cuenta / Login (UI local) ====== */
+/* ====== Cuenta / Login ====== */
 function openMenu(){q('#amenu').classList.add('open')} function closeMenu(){q('#amenu').classList.remove('open')}
 q('#abtn').addEventListener('click',()=>{q('#amenu').classList.toggle('open')});
 document.addEventListener('click',e=>{if(!q('#amenu').contains(e.target) && !q('#abtn').contains(e.target)) closeMenu()})
 function user(){return U(K.USER,null)} function setUser(u){SVE(K.USER,u); hydrateAccount()}
 function hydrateAccount(){const u=user(); q('#aico').textContent=u? (u.name?.[0]||'?').toUpperCase() : '?'; q('#aname').textContent=u? u.name : 'Invitado'; q('#amenu').querySelector('a').textContent=u? '👤 Mi cuenta' : '👤 Iniciar sesión'}
 function openLogin(){q('#ml').style.display='flex'} function closeLogin(){q('#ml').style.display='none'}
+function doLogin(){const n=q('#ln').value.trim(); const e=q('#le').value.trim(); if(!n){alert('Escribe tu nombre');return} setUser({name:n,email:e}); closeLogin(); alert('Sesión iniciada')}
 function demoLogin(){setUser({name:'Demo',email:'demo@planazoo.app'}); closeLogin()}
 function logout(){localStorage.removeItem(K.USER); hydrateAccount(); closeMenu(); alert('Sesión cerrada')}
-hydrateAccount();
 
 /* ====== NAV ====== */
 function tab(name){ qq('.tab').forEach(t=>t.classList.toggle('on',t.dataset.t===name)); qq('.view').forEach(v=>v.classList.remove('on')); q('#'+name).classList.add('on')
@@ -297,7 +334,7 @@ qq('.tab').forEach(t=>t.onclick=()=>tab(t.dataset.t))
 function openPrefs(){ tab('prefs'); const p=U(K.PREFS,{city:'',budget:'medio',ints:[]}); q('#pcity').value=p.city||''; q('#pbud').value=p.budget||'medio'; const wrap=q('#pints'); wrap.innerHTML=''; CATS.forEach(c=>{const l=document.createElement('label'); l.className='pill'; l.innerHTML=`<input type='checkbox' value='${c.id}'> ${c.l}`; wrap.appendChild(l)}); const set=new Set(p.ints||[]); wrap.querySelectorAll('input').forEach(i=>i.checked=set.has(i.value)) }
 function savePrefs(){ const city=q('#pcity').value.trim(),budget=q('#pbud').value,ints=[...q('#pints').querySelectorAll('input:checked')].map(i=>i.value); SVE(K.PREFS,{city, budget, ints}); alert('Preferencias guardadas'); tab('crear') }
 
-/* ====== Amigos ====== */
+/* ====== Amigos (usuarios con avatar) ====== */
 function defaultFriends(){return [
   {id:'u1',name:'Verónica',handle:'@vero',avatar:'V'},
   {id:'u2',name:'Marcos',handle:'@marcos',avatar:'M'},
@@ -327,36 +364,36 @@ function addManual(){ const t=prompt('Escribe la actividad/plan'); if(!t) return
 function ol(){return parseInt(localStorage.getItem('pz_limit_options')||'5',10)} function al(){return parseInt(localStorage.getItem('pz_limit_active')||'3',10)}
 function createShare(){ if(!guardDetails()) return; const title=q('#pt').value.trim(), dl=Math.max(10,Math.min(1440,parseInt(q('#pl').value||'120',10))), dt=q('#pd').value?new Date(q('#pd').value).getTime():Date.now()+2*3600*1000; if(opts.length<1){alert('Añade al menos 1 actividad');return} const polls=U(K.POLLS,{}); const active=Object.values(polls).filter(p=>!p.closed&&p.when>now()).length; if(active>=al()){alert('Límite de planes activos (freemium)');return} const id=uid(), invited=(JSON.parse(q('#chips').dataset.sel||'[]')); polls[id]={id,title,options:opts.map((o,i)=>({id:i,text:o.t,votes:0,meta:o.cat?{cat:o.cat}:null})),createdAt:now(),deadline:now()+dl*60000,when:dt,closed:false,collab:true,invited,owner:user()?.email||'demo',rating:0,cancelled:false}; SVE(K.POLLS,polls); location.hash='#/votar/'+id; renderVote(); qq('.view').forEach(v=>v.classList.remove('on')); q('#votar').classList.add('on') }
 
-/* ====== Votar / Resultado ====== */
-let tmr=null, tie=[];
-function renderVote(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p){alert('No existe'); tab('home'); return}
-  q('#vt').textContent='Vota: '+p.title; q('#collab').style.display=p.collab?'inline-block':'none'; q('#vn').value=localStorage.getItem('pz_nombre')||''; q('#link').textContent=location.origin+location.pathname+'#/votar/'+id;
-  const w=q('#vlist'); w.innerHTML=''; const closed=p.closed||now()>=p.deadline;
-  p.options.forEach(o=>{const d=document.createElement('div'); d.className='opt'; d.innerHTML=`<div class='row'><div style='flex:1'>${o.text}</div><button class='btn s p'>Votar</button></div>`; const b=d.querySelector('button'); b.disabled=closed; b.onclick=()=>{const n=q('#vn').value.trim(); if(!n){alert('Pon tu nombre');return} localStorage.setItem('pz_nombre',n); o.votes=(o.votes||0)+1; const polls=U(K.POLLS,{}); polls[id]=p; SVE(K.POLLS,polls); location.hash='#/res/'+id; renderRes(); qq('.view').forEach(v=>v.classList.remove('on')); q('#res').classList.add('on')}; w.appendChild(d)});
-  clearInterval(tmr); tmr=setInterval(()=>{const r=Math.max(0,p.deadline-now()); q('#rem').textContent=(p.closed?'Cerrada':Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s')},500)
-}
+/* ====== Votar / Resultado / Compartir / Comunidad / Historial (sin cambios funcionales relevantes) ====== */
+let tmr=null, tie=[]; function renderVote(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p){alert('No existe'); tab('home'); return} q('#vt').textContent='Vota: '+p.title; q('#collab').style.display=p.collab?'inline-block':'none'; q('#vn').value=localStorage.getItem('pz_nombre')||''; q('#link').textContent=location.origin+location.pathname+'#/votar/'+id; const w=q('#vlist'); w.innerHTML=''; const closed=p.closed||now()>=p.deadline; p.options.forEach(o=>{const d=document.createElement('div'); d.className='opt'; d.innerHTML=`<div class='row'><div style='flex:1'>${o.text}</div><button class='btn s p'>Votar</button></div>`; const b=d.querySelector('button'); b.disabled=closed; b.onclick=()=>{const n=q('#vn').value.trim(); if(!n){alert('Pon tu nombre');return} localStorage.setItem('pz_nombre',n); o.votes=(o.votes||0)+1; const polls=U(K.POLLS,{}); polls[id]=p; SVE(K.POLLS,polls); location.hash='#/res/'+id; renderRes(); qq('.view').forEach(v=>v.classList.remove('on')); q('#res').classList.add('on')}; w.appendChild(d)}); clearInterval(tmr); tmr=setInterval(()=>{const r=Math.max(0,p.deadline-now()); q('#rem').textContent=(p.closed?'Cerrada':Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s')},500) }
 function contrib(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p||p.closed||now()>=p.deadline){alert('Cerrada');return} const t=prompt('Añade tu opción'); if(!t) return; p.options.push({id:p.options.length,text:t,votes:0}); polls[id]=p; SVE(K.POLLS,polls); renderVote() }
 function goRes(){ renderRes(); qq('.view').forEach(v=>v.classList.remove('on')); q('#res').classList.add('on') }
-function renderRes(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p){alert('No existe'); tab('home'); return}
-  q('#rt').textContent='Resultado: '+p.title; q('#state').textContent=(p.closed||now()>=p.deadline)?'Cerrada':'Abierta';
-  const w=q('#rlist'); w.innerHTML=''; let sum=0,max=-1,win=null; p.options.forEach(o=>{sum+=(o.votes||0); if((o.votes||0)>max){max=o.votes||0;win=o}});
-  p.options.forEach(o=>{const d=document.createElement('div'); d.className='opt'; d.innerHTML=`<div class='row' style='justify-content:space-between'><div>${o.text}</div><b>${o.votes||0}</b></div>`; w.appendChild(d)});
-  const leaders=p.options.filter(o=>(o.votes||0)===max);
-  if(leaders.length>1 && (p.closed||now()>=p.deadline)){ q('#tie').style.display='block'; const tw=q('#tieopts'); tw.innerHTML=''; leaders.forEach(o=>{ const d=document.createElement('div'); d.className='opt'; d.textContent=o.text; tw.appendChild(d)}); tie=leaders.map(o=>o.id); q('#win').innerHTML='<small class=pill>Empate detectado</small>' } else { q('#tie').style.display='none'; q('#win').innerHTML=win?`<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`:'<small class=pill>Aún no hay votos</small>' }
-}
+function renderRes(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p){alert('No existe'); tab('home'); return} q('#rt').textContent='Resultado: '+p.title; q('#state').textContent=(p.closed||now()>=p.deadline)?'Cerrada':'Abierta'; const w=q('#rlist'); w.innerHTML=''; let sum=0,max=-1,win=null; p.options.forEach(o=>{sum+=(o.votes||0); if((o.votes||0)>max){max=o.votes||0;win=o}}); p.options.forEach(o=>{const d=document.createElement('div'); d.className='opt'; d.innerHTML=`<div class='row' style='justify-content:space-between'><div>${o.text}</div><b>${o.votes||0}</b></div>`; w.appendChild(d)}); const leaders=p.options.filter(o=>(o.votes||0)===max); if(leaders.length>1 && (p.closed||now()>=p.deadline)){ q('#tie').style.display='block'; const tw=q('#tieopts'); tw.innerHTML=''; leaders.forEach(o=>{ const d=document.createElement('div'); d.className='opt'; d.textContent=o.text; tw.appendChild(d)}); tie=leaders.map(o=>o.id); q('#win').innerHTML='<small class=pill>Empate detectado</small>' } else { q('#tie').style.display='none'; q('#win').innerHTML=win?`<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`:'<small class=pill>Aún no hay votos</small>' } }
 function closeNow(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p) return; p.closed=true; polls[id]=p; SVE(K.POLLS,polls); renderRes() }
 function tRand(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p||!tie.length) return; const chosen=tie[Math.floor(Math.random()*tie.length)]; const opt=p.options.find(o=>o.id===chosen); q('#tie').style.display='none'; q('#win').innerHTML=`<h3>🎉 Ganador (aleatorio): ${opt.text}</h3>` }
 function tManual(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; const names=p.options.filter(o=>tie.includes(o.id)).map(o=>o.text).join(' | '); const pick=prompt('Elige una: '+names); const opt=p.options.find(o=>o.text===pick); if(opt){ q('#tie').style.display='none'; q('#win').innerHTML=`<h3>🎉 Ganador (manual): ${opt.text}</h3>` } }
 function share(){ const url=location.href, txt='Únete a decidir el plan en Planazoo'; if(navigator.share){navigator.share({title:'Planazoo',text:txt,url}).catch(()=>{})} else {navigator.clipboard.writeText(url); alert('Enlace copiado')} window.open('https://wa.me/?text='+encodeURIComponent(txt+' '+url),'_blank') }
 function publish(){ const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p){alert('No encontrado');return} const c=U(K.COMM,COMM_DEF); c.push({id:'u'+id,title:p.title,desc:(p.options[0]?.text||'Plan'),rating:10,cat:(p.options[0]?.meta?.cat||'cultura')}); SVE(K.COMM,c); alert('Publicado en comunidad'); renderComm(); renderHomeC() }
-function publishPlan(id){ const polls=U(K.POLLS,{}), p=polls[id]; if(!p){alert('No encontrado');return} const c=U(K.COMM,COMM_DEF); c.push({id:'u'+id,title:p.title,desc:(p.options[0]?.text||'Plan'),rating:10,cat:(p.options[0]?.meta?.cat||'cultura')}); SVE(K.COMM,c); alert('Publicado en comunidad'); renderComm(); renderHomeC(); }
 
-/* ====== Historial / rating ====== */
+
+function publishPlan(id){
+  const polls=U(K.POLLS,{}), p=polls[id];
+  if(!p){alert('No encontrado');return}
+  const c=U(K.COMM,COMM_DEF);
+  c.push({id:'u'+id,title:p.title,desc:(p.options[0]?.text||'Plan'),rating:10,cat:(p.options[0]?.meta?.cat||'cultura')});
+  SVE(K.COMM,c);
+  alert('Publicado en comunidad');
+  renderComm(); renderHomeC();
+}
+
+/* ====== Historial / editar-borrar-cancelar / valorar ====== */
 let rateId=null, stars=0
 function renderHist(){ const polls=U(K.POLLS,{}), ratings=U(K.RATE,{}), w=q('#hlist'); w.innerHTML=''; const arr=Object.values(polls).sort((a,b)=>b.when-a.when); if(!arr.length){ w.innerHTML='<div class=pill>No hay planes</div>'; return } arr.forEach(p=>{ const st=p.cancelled?'Cancelado':(p.closed?'Cerrado':(now()>=p.deadline?'Cerrando':'Activo')); const rated=ratings[p.id]?.stars; const d=document.createElement('div'); d.className='opt'; d.innerHTML=`<div class='row' style='justify-content:space-between;align-items:flex-start'><div><b>${p.title}</b><br><small class='pill'>${fmt(p.when)} · ${st}</small>${rated?`<br><small>★ ${rated}/5</small>`:''}</div><div class='row'><button class='btn s' onclick='openVote("${p.id}")'>Abrir</button><button class='btn s' onclick='cancelPlan("${p.id}")'>Cancelar</button><button class='btn s' onclick='delPlan("${p.id}")'>Borrar</button>${(p.closed||p.cancelled||p.when<now())?`<button class='btn s' onclick='openMR("${p.id}")'>Valorar</button>`:''}</div></div>`; w.appendChild(d) }) }
 function openVote(id){ location.hash='#/votar/'+id; qq('.view').forEach(v=>v.classList.remove('on')); q('#votar').classList.add('on'); renderVote() }
 function delPlan(id){ if(!confirm('¿Seguro?')) return; const polls=U(K.POLLS,{}); delete polls[id]; SVE(K.POLLS,polls); renderHist() }
 function cancelPlan(id){ const polls=U(K.POLLS,{}), p=polls[id]; if(!p) return; p.cancelled=true; p.closed=true; polls[id]=p; SVE(K.POLLS,polls); renderHist() }
+
+/* ====== Rate modal ====== */
 function openMR(id){ rateId=id; stars=0; rst(); q('#rc').value=''; q('#mr').style.display='flex' } function closeMR(){ q('#mr').style.display='none'; rateId=null }
 function rst(){ const w=q('#rst'); w.innerHTML=''; for(let i=1;i<=5;i++){ const s=document.createElement('span'); s.className='star'+(i<=stars?' on':''); s.textContent='★'; s.onclick=()=>{stars=i; rst()}; w.appendChild(s) } }
 function saveRate(){ if(stars<1){alert('Selecciona estrellas');return} const r=U(K.RATE,{}); r[rateId]={stars,comment:q('#rc').value.trim(),at:now()}; SVE(K.RATE,r); closeMR(); alert('¡Gracias!'); renderHist() }
@@ -376,6 +413,10 @@ function renderHomeC(){ const w=q('#homec'); w.innerHTML=''; gComm().sort((a,b)=
 function renderStats(){ const st=U(K.STATS,{cats:{},tod:{},count:0}), w=q('#sw'); w.innerHTML=''; const favCat=Object.entries(st.cats).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—', favTod=Object.entries(st.tod).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—'; [['Categoría top',favCat],['Franja favorita',favTod],['Votos totales',st.count]].forEach(([k,v])=>{ const d=document.createElement('div'); d.className='opt'; d.innerHTML=`<div class='row' style='justify-content:space-between'><div>${k}</div><b>${v}</b></div>`; w.appendChild(d) }) }
 function track(o){ const st=U(K.STATS,{cats:{},tod:{},count:0}); const cat=(o.meta&&o.meta.cat)||'otros'; st.cats[cat]=(st.cats[cat]||0)+1; st.tod['tarde']=(st.tod['tarde']||0)+1; st.count++; SVE(K.STATS,st) }
 
+/* ====== Init ====== */
+function renderHome(){renderHomeC(); tab('home'); hydrateAccount()}
+renderHome()
+
 /* === Modal de sugerencias: mover #sugs dentro del modal y devolverlo al cerrar === */
 let _sugs_parent=null, _sugs_next=null;
 function _ensureSugAnchors(){
@@ -390,9 +431,9 @@ function openSug(){
   const node=document.getElementById('sugs');
   const wrap=document.getElementById('sugwrap');
   if(!node || !wrap) return;
-  wrap.innerHTML='';
-  wrap.appendChild(node);
-  genSugUI();
+  wrap.innerHTML='';           // asegurar contenedor limpio
+  wrap.appendChild(node);      // mover #sugs al modal
+  genSugUI();                  // reutiliza la función original
   document.getElementById('msug').style.display='flex';
 }
 function closeMSug(){
@@ -407,46 +448,112 @@ document.addEventListener('click',e=>{
   const m=document.getElementById('msug');
   if(m && m.style.display==='flex' && e.target===m){ closeMSug() }
 });
+
 </script>
-
-<!-- ====== Supabase (añadido) ====== -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // ⬇️ Sustituye por tus valores reales (Supabase → Settings → API)
-  window.SUPABASE_URL = "https://ggxdzwjlkqqznpzrfayl.supabase.co";
-  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdneGR6d2psa3Fxem5wenJmYXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MTY4NDksImV4cCI6MjA3MDQ5Mjg0OX0.wHb_QV4t_MHSQNyBXrU3k-MTUWXn4fwhwNOw4YscyWc";
-  const SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+// --- Enhancers v4 ---
+function enhanceHist(){
+  const hist = document.querySelector('#hist');
+  if(!hist) return;
+  hist.querySelectorAll('.card').forEach(card=>{
+    // find last .row with buttons
+    const rows = card.querySelectorAll('.row');
+    if(!rows.length) return;
+    const r = rows[rows.length-1];
+    // collect buttons
+    const btns = Array.from(r.querySelectorAll('button'));
+    if(!btns.length) return;
+    // ensure a wrapper
+    let wrap = r.querySelector('.btngrp');
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.className='btngrp';
+      r.innerHTML='';
+      r.appendChild(wrap);
+    }
+    // desired order
+    const order = ['Abrir','Publicar','Valorar','Cancelar','Borrar'];
+    // create Publish button if missing
+    if(!btns.some(b=>b.textContent.trim().toLowerCase().includes('publicar'))){
+      const id = (card.querySelector('[data-id]')?.dataset.id) || (card.querySelector('button')?.getAttribute('onclick')||'').match(/\"(.*?)\"/)?.[1] || '';
+      const b = document.createElement('button');
+      b.className='btn s';
+      b.textContent='Publicar';
+      b.onclick=()=>publishPlan(id);
+      btns.push(b);
+    }
+    // move into wrapper in given order
+    order.forEach(lbl=>{
+      const b = btns.find(x=>x && x.textContent && x.textContent.trim().toLowerCase().includes(lbl.toLowerCase()));
+      if(b) wrap.appendChild(b);
+    });
+  });
+}
 
-  // Listener de sesión: al volver del magic link sincroniza la UI
-  SB.auth.onAuthStateChange(async (_event, session) => {
-    if (session?.user) {
-      setUser({
-        name: session.user.email?.split('@')[0] || 'Usuario',
-        email: session.user.email || ''
-      });
-      try {
-        await SB.from('users').upsert({
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.user_metadata?.name || null
-        });
-      } catch(_) {}
-      closeLogin();
-      alert('Sesión iniciada');
+// Wrap renderHist to apply enhancement after render
+if(typeof renderHist==='function'){
+  const __renderHist = renderHist;
+  renderHist = function(){ __renderHist(); setTimeout(enhanceHist,0); }
+}
+
+// Voting UI: rename "Cerrar" -> "Finalizar votación" and prevent overflow
+function enhanceVote(){
+  const mv = document.querySelector('#mv');
+  if(!mv) return;
+  mv.querySelectorAll('button').forEach(b=>{
+    if(b.textContent.trim().toLowerCase()==='cerrar'){
+      b.textContent='Finalizar votación';
     }
   });
-
-  // Reemplazo de doLogin() para magic link
-  async function doLogin(){
-    const e = document.querySelector('#le').value.trim();
-    if(!e){ alert('Escribe tu email'); return; }
-    try{
-      await SB.auth.signInWithOtp({ email: e });
-      alert('Te envié un enlace de acceso. Abre tu correo y confirma.');
-    }catch(err){
-      alert('Error enviando enlace: ' + (err?.message || err));
-    }
+  mv.querySelectorAll('.row.actions, .row.vote-actions').forEach(x=>{
+    x.classList.add('vote-actions');
+  });
+}
+if(typeof openVote==='function'){
+  const __openVote = openVote;
+  openVote = function(){
+    __openVote.apply(null, arguments);
+    setTimeout(enhanceVote,0);
   }
+}
+
+// Suggestions modal: ensure body scroll control
+function openMSug(){
+  const m = document.getElementById('msug');
+  if(!m) return;
+  m.style.display='block';
+  document.body.classList.add('modal-open');
+}
+function closeMSug(){
+  const m = document.getElementById('msug');
+  if(!m) return;
+  m.style.display='none';
+  document.body.classList.remove('modal-open');
+}
+
+// Rating handler fallback
+function setRating(n){
+  const cont = document.getElementById('rst') || document.getElementById('ratingStars') || document.querySelector('.rating,.stars');
+  if(!cont) return;
+  Array.from(cont.querySelectorAll('.star')).forEach((el,i)=>{
+    el.classList.toggle('on', i < n);
+  });
+  cont.dataset.value = n;
+}
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    });
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Vercel inyecta estas variables si quieres usarlas desde el servidor,
+  // pero en el front es más fácil empezar así:
+  window.SUPABASE_URL = "https://ggxdzwjlkqqznpzrfayl.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdneGR6d2psa3Fxem5wenJmYXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MTY4NDksImV4cCI6MjA3MDQ5Mjg0OX0.wHb_QV4t_MHSQNyBXrU3k-MTUWXn4fwhwNOw4YscyWc";
 </script>
 <script src="/api-compound.js"></script>
 
@@ -490,8 +597,5 @@ async function doLogin(){
 }
 </script>
 
-=======
-
-<!-- (si tienes service worker, lo registrará tu script/manifest) -->
 </body>
 </html>
