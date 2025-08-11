@@ -448,6 +448,49 @@ document.addEventListener('click',e=>{
     }
   }
 </script>
+<script src="/api-compound.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // TODO: Sustituye estas constantes por los valores reales de tu proyecto de Supabase
+  window.SUPABASE_URL = "https://ggxdzwjlkqqznpzrfayl.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdneGR6d2psa3Fxem5wenJmYXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MTY4NDksImV4cCI6MjA3MDQ5Mjg0OX0.wHb_QV4t_MHSQNyBXrU3k-MTUWXn4fwhwNOw4YscyWc";
+</script>
+<script src="/api-compound.js"></script>
+
+
+<script>
+// Crea el cliente si no existe (api-compound.js ya lo crea con window.SUPABASE_*)
+const SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+// 1) Manejar cambios de sesión (cuando vuelves del magic link)
+SB.auth.onAuthStateChange(async (_event, session) => {
+  if (session?.user) {
+    try {
+      setUser({ name: session.user.email?.split('@')[0] || 'Usuario', email: session.user.email || '' });
+      // (Opcional) crea/actualiza perfil en tabla users
+      await SB.from('users').upsert({ id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name || null });
+    } catch (e) {}
+    if (typeof closeLogin === 'function') closeLogin();
+    alert('Sesión iniciada');
+  }
+});
+
+// 2) Reemplaza tu doLogin() para usar magic link
+async function doLogin(){
+  const n = document.querySelector('#ln')?.value?.trim();
+  const e = document.querySelector('#le')?.value?.trim();
+  if(!e){ alert('Escribe tu email'); return; }
+  try{
+    await SB.auth.signInWithOtp({ email: e });
+    alert('Te he enviado un enlace de acceso. Abre tu correo y pulsa el botón para entrar.');
+  }catch(err){
+    alert('Error enviando enlace: '+(err?.message||err));
+  }
+}
+</script>
+
+=======
 
 <!-- (si tienes service worker, lo registrará tu script/manifest) -->
 </body>
