@@ -547,5 +547,13 @@ function setRating(n){
     });
   }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Vercel inyecta estas variables si quieres usarlas desde el servidor,
+  // pero en el front es más fácil empezar así:
+  window.SUPABASE_URL = "PEGAR_AQUI_TU_PROJECT_URL";
+  window.SUPABASE_ANON_KEY = "PEGAR_AQUI_TU_ANON_PUBLIC_KEY";
+</script>
+<script src="/api-compound.js"></script>
 </body>
 </html>
