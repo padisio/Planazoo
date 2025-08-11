@@ -703,9 +703,18 @@ function setRating(n){
 })();
 </script>
 <script>
-SB && SB.from('plans').on('INSERT', payload => {
-  console.log('📥 Nuevo plan en Supabase:', payload.new);
-}).subscribe();
+  // Realtime en supabase-js v2
+  if (window.SB && SB.channel) {
+    const ch = SB.channel('plans-inserts');
+    ch.on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'plans'
+    }, (payload) => {
+      console.log('📥 Nuevo plan en Supabase:', payload.new);
+    });
+    ch.subscribe();
+  }
 </script>
 </body>
 </html>
