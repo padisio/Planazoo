@@ -6,8 +6,7 @@
       auth: { storageKey: 'planazoo-auth' }
     });
   }
-  const SB = window.SB;
-  if (!SB) {
+if (!SB) {
     console.warn('[Planazoo] Supabase no está listo (faltan claves o supabase-js). api-compound quedará inactivo.');
     return;
   }
