@@ -635,6 +635,77 @@ function setRating(n){
   }
 })();
 </script>
+<script>
+(function(){
+  const q=s=>document.querySelector(s), qq=s=>Array.from(document.querySelectorAll(s));
+  const toISO=v=>v?new Date(v).toISOString():new Date().toISOString();
 
+  async function requireLogin(){
+    const u=(await SB.auth.getUser()).data.user;
+    if(!u){ openLogin?.(); alert('Inicia sesión para crear'); throw new Error('No logueado'); }
+    return u;
+  }
+
+  // Sustituimos createShare para que use Supabase (mantiene tu UI y navegación)
+  const __renderVote = window.renderVote; // por si lo necesitas
+  window.createShare = async function(){
+    try{
+      if(typeof guardDetails==='function' && !guardDetails()) return;
+      const user = await requireLogin();
+
+      // Datos UI
+      const title = q('#pt')?.value?.trim();
+      const city  = q('#pc')?.value?.trim() || null;
+      const dlMin = Math.max(10, Math.min(1440, parseInt(q('#pl')?.value || '120',10)));
+      const whenInput = q('#pd')?.value;
+      if(!title || !whenInput){ alert('Completa título y fecha/hora'); return; }
+      if(!window.opts || !window.opts.length){ alert('Añade al menos 1 actividad'); return; }
+
+      const when_ts = toISO(whenInput);
+      const deadline_ts = new Date(Date.now()+dlMin*60000).toISOString();
+
+      // 1) plan
+      const planIns = await SB.from('plans').insert({
+        owner_id: user.id,
+        title, city, when_ts, deadline_ts,
+        collab: true, closed: false, cancelled: false, is_public: true
+      }).select().single();
+      if(planIns.error){ console.error(planIns.error); alert('Error plan: '+planIns.error.message); return; }
+
+      // 2) bloque
+      const blockIns = await SB.from('plan_blocks').insert({
+        plan_id: planIns.data.id, title:'Bloque 1', sort_order:1
+      }).select().single();
+      if(blockIns.error){ console.error(blockIns.error); alert('Error bloque: '+blockIns.error.message); return; }
+
+      // 3) opciones (desde tu array global window.opts)
+      const rows = window.opts.map(o=>({
+        block_id: blockIns.data.id,
+        text: o.t,
+        cat: o.cat || null,
+        place: null,
+        price_num: null,
+        created_by: user.id
+      }));
+      const optsIns = await SB.from('block_options').insert(rows);
+      if(optsIns.error){ console.error(optsIns.error); alert('Error opciones: '+optsIns.error.message); return; }
+
+      // Navega a votar (usa tu UI)
+      location.hash = '#/votar/'+planIns.data.id;
+      if(typeof window.renderVote === 'function'){ await window.renderVote(); }
+      qq('.view').forEach(v=>v.classList.remove('on'));
+      q('#votar')?.classList.add('on');
+    }catch(e){
+      console.error('[Planazoo] createShare', e);
+      alert('No se pudo crear el plan (ver consola).');
+    }
+  };
+})();
+</script>
+<script>
+SB && SB.from('plans').on('INSERT', payload => {
+  console.log('📥 Nuevo plan en Supabase:', payload.new);
+}).subscribe();
+</script>
 </body>
 </html>
