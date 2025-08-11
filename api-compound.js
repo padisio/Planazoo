@@ -1,5 +1,7 @@
-// api-compound.js - API mínima para planes compuestos
-const SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+// api-compound.js - API mínima para planes compuestos (safe singleton)
+window.__pz_supabase = window.__pz_supabase || window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+const SB = window.__pz_supabase;
+(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 async function loginMagic(email){
   const { data, error } = await SB.auth.signInWithOtp({ email });
