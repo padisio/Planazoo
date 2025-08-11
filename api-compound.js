@@ -1,8 +1,18 @@
-// api-compound.js - API mínima para planes compuestos (safe singleton)
-window.__pz_supabase = window.__pz_supabase || window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-const SB = window.__pz_supabase;
-(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+/* api-compound.js (safe singleton) */
+(function(){
+  // Reutiliza window.SB si existe; si no, créalo con storageKey fijo
+  if (!window.SB && window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
+    window.SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+      auth: { storageKey: 'planazoo-auth' }
+    });
+  }
+  const SB = window.SB;
+  if (!SB) {
+    console.warn('[Planazoo] Supabase no está listo (faltan claves o supabase-js). api-compound quedará inactivo.');
+    return;
+  }
 
+// api-compound.js - API mínima para planes compuestos
 async function loginMagic(email){
   const { data, error } = await SB.auth.signInWithOtp({ email });
   if(error) throw error;
@@ -92,3 +102,6 @@ function subscribeBlockVotes(plan_id, handler){
     })
     .subscribe();
 }
+
+
+})(); // end safe singleton wrapper
