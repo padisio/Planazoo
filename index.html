@@ -2,6 +2,7 @@
 
 <html data-theme="light" lang="es">
 <head>
+<link rel="manifest" href="/manifest.json">
 <meta charset="utf-8"/><meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
 <title>Planazoo v9 (fases + login)</title><meta content="#fff" id="meta-theme" name="theme-color"/>
 <style>
@@ -538,6 +539,13 @@ function setRating(n){
   });
   cont.dataset.value = n;
 }
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>
