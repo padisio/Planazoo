@@ -1,5 +1,5 @@
-// Simple SW cache for Planazoo (cache-first for static; fallback to index.html for navigation)
-const CACHE = 'planazoo-v1';
+// Service Worker seguro (solo GET) + fallback offline para navegación
+const CACHE = 'planazoo-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -17,25 +17,37 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then(keys => Promise.all(keys.map(k => (k === CACHE ? null : caches.delete(k)))))
-    .then(() => self.clients.claim())
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  // Navigation requests: return index.html if offline
+
+  // Navegación: si falla la red, servimos index.html
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).catch(() => caches.match('/index.html'))
     );
     return;
   }
-  // Others: cache-first
+
+  // Solo cacheamos GET (PUT/POST/HEAD/OPTIONS dan problemas)
+  if (req.method !== 'GET') {
+    e.respondWith(fetch(req));
+    return;
+  }
+
   e.respondWith(
-    caches.match(req).then(res => res || fetch(req).then(r => {
-      const copy = r.clone();
-      caches.open(CACHE).then(c => c.put(req, copy));
-      return r;
-    }))
+    caches.match(req).then(cached => {
+      if (cached) return cached;
+      return fetch(req).then(res => {
+        // Evitar cachear respuestas no válidas
+        if (!res || res.status !== 200 || res.type === 'opaque') return res;
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy));
+        return res;
+      }).catch(() => cached);
+    })
   );
 });
