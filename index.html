@@ -572,5 +572,69 @@ function setRating(n){
   }
 </script>
 
+
+<!-- === Auth wiring + Magic Link handler (idempotente) === -->
+<script>
+(function(){
+  function wireAuth(){
+    if (!window.SB || window.__pz_auth_wired) return;
+    window.__pz_auth_wired = true;
+    try{
+      window.SB.auth.onAuthStateChange(async (_event, session) => {
+        if (session && session.user){
+          try{
+            if (typeof setUser === 'function'){
+              setUser({ name: session.user.email?.split('@')[0] || 'Usuario', email: session.user.email || '' });
+            }
+            try{
+              await window.SB.from('users').upsert({
+                id: session.user.id,
+                email: session.user.email,
+                name: session.user.user_metadata?.name || null
+              });
+            }catch(_){}
+            if (typeof closeLogin === 'function') closeLogin();
+            try { alert('Sesión iniciada'); } catch(_){}
+          }catch(e){ console.warn('[Planazoo] post-auth actions', e); }
+        }
+      });
+    }catch(e){ console.warn('[Planazoo] onAuthStateChange wiring failed', e); }
+  }
+
+  async function handleMagicReturn(){
+    try{
+      const h = window.location.hash && window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+      if (!h) { wireAuth(); return; }
+      const p = new URLSearchParams(h);
+      const at = p.get('access_token');
+      const rt = p.get('refresh_token');
+      if (at && rt && window.SB){
+        await window.SB.auth.setSession({ access_token: at, refresh_token: rt });
+        history.replaceState({}, document.title, location.pathname + location.search);
+      }
+    }catch(e){ console.warn('[Planazoo] handleMagicReturn', e); }
+    wireAuth();
+  }
+
+  // Provide doLogin if missing or override to ensure magic link flow uses SB
+  window.doLogin = async function(){
+    const e = document.querySelector('#le')?.value?.trim();
+    if(!e){ alert('Escribe tu email'); return; }
+    try{
+      await window.SB.auth.signInWithOtp({ email: e });
+      alert('Te he enviado un enlace de acceso. Abre tu correo y pulsa el botón para entrar.');
+    }catch(err){
+      alert('Error enviando enlace: '+(err?.message||err));
+    }
+  };
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', handleMagicReturn);
+  } else {
+    handleMagicReturn();
+  }
+})();
+</script>
+
 </body>
 </html>
