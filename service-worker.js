@@ -1,84 +1,51 @@
-// Service Worker seguro (solo http(s) + GET) con fallback offline
-const CACHE = 'planazoo-v3';
-const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+// Service Worker tolerante (no falla si faltan iconos)
+const CACHE_NAME = 'planazoo-v1';
+const CORE = [
+  './',
+  './index.html',
+  './styles.css',
+  './js/app.js',
+  './js/enhancers.js',
+  './js/supabase-bootstrap.js',
+  './api-compound.js',
+  // Si añades icons/, puedes incluirlos aquí también.
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(c => c.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-      .catch(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      // Cachear de forma tolerante
+      await Promise.allSettled(CORE.map(asset => fetch(asset, {cache:'no-cache'}).then(r => r.ok && cache.put(asset, r))));
+    } finally {
+      self.skipWaiting();
+    }
+  })());
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.map(k => (k === CACHE ? null : caches.delete(k)))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => k !== CACHE_NAME && caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (e) => {
-  const req = e.request;
-
-  // 0) Ignora todo lo que no sea http(s) (evita chrome-extension://, data:, etc.)
-  if (!req.url.startsWith('http')) return;
-
-  // 1) Navegación: network-first con fallback a index.html cacheado
-  if (req.mode === 'navigate') {
+  const url = new URL(e.request.url);
+  if (url.origin === location.origin) {
     e.respondWith((async () => {
+      const cached = await caches.match(e.request);
+      if (cached) return cached;
       try {
-        const net = await fetch(req);
-        return net;
+        const res = await fetch(e.request);
+        const clone = res.clone();
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(e.request, clone);
+        return res;
       } catch {
-        const cached = await caches.match('/index.html');
-        if (cached) return cached;
-        // último recurso: intenta lo que haya en cache para la URL
-        const any = await caches.match(req);
-        if (any) return any;
-        throw new Error('Offline y sin APP_SHELL en cache');
+        return cached || Response.error();
       }
     })());
-    return;
   }
-
-  // 2) Solo GET (nunca HEAD/POST/etc.)
-  if (req.method !== 'GET') {
-    e.respondWith(fetch(req));
-    return;
-  }
-
-  // 3) Cache-first con actualización en segundo plano, pero solo para http(s) y respuestas válidas
-  e.respondWith((async () => {
-    const cached = await caches.match(req);
-    if (cached) return cached;
-
-    try {
-      const net = await fetch(req);
-
-      // No cachees respuestas opacas o no-OK
-      if (net && net.ok && net.type === 'basic' && req.url.startsWith(self.location.origin)) {
-        const copy = net.clone();
-        const c = await caches.open(CACHE);
-        try {
-          await c.put(req, copy);
-        } catch (err) {
-          // Ignora fallos de put (por ejemplo, si el req no es cachéable)
-          // console.warn('[SW] cache.put fallo', err);
-        }
-      }
-      return net;
-    } catch {
-      // Fallback: devuelve lo que haya cacheado si existe
-      if (cached) return cached;
-      throw;
-    }
-  })());
 });
