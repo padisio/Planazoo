@@ -1,141 +1,206 @@
 // js/supabase-bootstrap.js
-// Bootstrap robusto de Supabase + override fiable de createShare()
-
 (function () {
-  const $  = (s) => document.querySelector(s);
-  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  // === Usa las globales si ya las defines en otro sitio; si no, aplica estos valores por defecto ===
+  const SB_URL = window.SUPABASE_URL || "https://ggxdzwjlkqqznpzrfayl.supabase.co";
+  const SB_KEY = window.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdneGR6d2psa3Fxem5wenJmYXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MTY4NDksImV4cCI6MjA3MDQ5Mjg0OX0.wHb_QV4t_MHSQNyBXrU3k-MTUWXn4fwhwNOw4YscyWc";
 
-  function log()  { try { console.log('[Supabase]', ...arguments); } catch(_){} }
-  function warn() { try { console.warn('[Supabase]', ...arguments); } catch(_){} }
-  function err()  { try { console.error('[Supabase]', ...arguments); } catch(_){} }
-
-  // Crear cliente (una sola vez)
-  if (!window.SB && window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
-    window.SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
-      auth: { storageKey: 'planazoo-auth' }
-    });
+  // === Crea el cliente sólo si la librería está cargada y tenemos credenciales ===
+  const hasLib = !!window.supabase;
+  if (hasLib && SB_URL && SB_KEY) {
+    if (!window.SB) {
+      window.SB = window.supabase.createClient(SB_URL, SB_KEY, {
+        auth: { storageKey: "planazoo-auth" },
+      });
+    }
+  } else {
+    console.warn(
+      "[Supabase] Librería o credenciales ausentes. Modo local (sin login/backend)."
+    );
   }
 
-  function sbReady() {
-    return !!(window.SB && window.SB.auth && window.SB.from);
-  }
+  // Flag práctico para el wizard
+  window.__pz_is_logged = false;
 
-  async function refreshAuthFlag() {
+  async function getSessionUser() {
+    if (!window.SB) return null;
     try {
-      if (!sbReady()) { window.__pz_is_logged = !!(window.user && window.user()); return; }
-      const { data: { user } } = await window.SB.auth.getUser();
-      window.__pz_is_logged = !!user;
-    } catch (_) {
-      window.__pz_is_logged = !!(window.user && window.user());
+      const { data } = await window.SB.auth.getUser();
+      return data?.user || null;
+    } catch {
+      return null;
     }
   }
 
-  // Wire auth state changes
-  (async function wireAuth() {
-    if (!sbReady()) { await refreshAuthFlag(); return; }
-    await refreshAuthFlag();
+  function wireAuth() {
+    if (!window.SB) return;
     try {
       window.SB.auth.onAuthStateChange(async (_event, session) => {
         window.__pz_is_logged = !!(session && session.user);
-        if (session && session.user && typeof window.setUser === 'function') {
+
+        if (window.__pz_is_logged) {
           try {
-            window.setUser({ name: session.user.email?.split('@')[0] || 'Usuario', email: session.user.email || '' });
-          } catch(_) {}
+            // Refresca cabecera de cuenta
+            window.setUser &&
+              window.setUser({
+                name: session.user.email?.split("@")[0] || "Usuario",
+                email: session.user.email || "",
+              });
+            window.closeLogin && window.closeLogin();
+          } catch (e) {
+            console.warn("[Supabase] post-auth UI", e);
+          }
         }
       });
     } catch (e) {
-      warn('onAuthStateChange wiring failed', e);
+      console.warn("[Supabase] onAuthStateChange wiring failed", e);
+    }
+  }
+  wireAuth();
+
+  // Magic link (maneja #access_token en la URL)
+  (function handleMagicLink() {
+    if (!window.SB) return;
+    try {
+      const h = (window.location.hash || "").replace(/^#/, "");
+      if (!h) return;
+      const p = new URLSearchParams(h);
+      const at = p.get("access_token");
+      const rt = p.get("refresh_token");
+      if (at && rt) {
+        window.SB.auth
+          .setSession({ access_token: at, refresh_token: rt })
+          .then(() => {
+            history.replaceState({}, document.title, location.pathname + location.search);
+          });
+      }
+    } catch (e) {
+      console.warn("[Supabase] handleMagicLink", e);
     }
   })();
 
-  // Login por Magic Link (sobrescribe si ya existía una versión local)
+  // Exponer doLogin (si no hay SB, avisa)
   window.doLogin = async function () {
+    if (!window.SB) {
+      alert("Login no disponible, Supabase no inicializado");
+      return;
+    }
+    const email = document.querySelector("#le")?.value?.trim();
+    if (!email) {
+      alert("Escribe tu email");
+      return;
+    }
     try {
-      const email = $('#le')?.value?.trim();
-      if (!email) { alert('Escribe tu email'); return; }
-      if (!sbReady()) { alert('Login no disponible (Supabase no inicializado)'); return; }
       await window.SB.auth.signInWithOtp({ email });
-      alert('Te envié un enlace por email. Ábrelo para entrar.');
-    } catch (e) {
-      alert('Error enviando enlace: ' + (e?.message || e));
+      alert("Te he enviado un enlace de acceso. Revisa tu correo.");
+    } catch (err) {
+      console.error("[Supabase] signInWithOtp", err);
+      alert(err?.message || "No se pudo enviar el enlace de acceso");
     }
   };
 
-  // Helper para ISO
-  const toISO = (v) => (v ? new Date(v).toISOString() : new Date().toISOString());
+  async function requireLogin() {
+    const u = await getSessionUser();
+    if (!u) {
+      window.openLogin && window.openLogin();
+      throw new Error("Inicia sesión para crear");
+    }
+    return u;
+  }
 
-  // Override único y visible en window
-  window.createShare = async function () {
-    // SB no disponible: usa la versión local si existe
-    if (!sbReady()) {
-      if (typeof window.createShareLocal === 'function') {
-        return window.createShareLocal();
-      }
-      throw new Error('Supabase no disponible y no hay createShareLocal');
+  // --- Implementación Supabase de createShare ---
+  async function createShareSB() {
+    if (!window.SB) throw new Error("Supabase no disponible");
+
+    const $ = (s) => document.querySelector(s);
+    const toISO = (v) => (v ? new Date(v).toISOString() : new Date().toISOString());
+
+    if (typeof window.guardDetails === "function" && !window.guardDetails()) return;
+
+    const user = await requireLogin();
+
+    if (!Array.isArray(window.opts) || window.opts.length < 1) {
+      alert("Añade al menos 1 actividad");
+      return;
     }
 
-    // Validación de UI
-    const title = $('#pt')?.value?.trim();
-    const city  = $('#pc')?.value?.trim() || null;
-    const dlMin = Math.max(10, Math.min(1440, parseInt($('#pl')?.value || '120', 10)));
-    const whenInput = $('#pd')?.value;
+    const title = $("#pt")?.value?.trim();
+    const city = $("#pc")?.value?.trim() || null;
+    const whenInput = $("#pd")?.value;
+    const dlMin = Math.max(
+      10,
+      Math.min(1440, parseInt($("#pl")?.value || "120", 10))
+    );
 
-    if (!title || !whenInput) throw new Error('Completa título y fecha/hora');
+    if (!title || !whenInput) {
+      alert("Completa título y fecha/hora");
+      return;
+    }
 
-    const list = Array.isArray(window.opts) ? window.opts : [];
-    if (!list.length) throw new Error('Añade al menos 1 actividad');
-
-    // Requiere usuario
-    const { data: { user } } = await window.SB.auth.getUser();
-    if (!user) { window.openLogin?.(); throw new Error('Inicia sesión para crear'); }
-
-    // Inserta plan + bloque + opciones
     const when_ts = toISO(whenInput);
     const deadline_ts = new Date(Date.now() + dlMin * 60000).toISOString();
 
-    const planIns = await window.SB.from('plans').insert({
-      owner_id: user.id,
-      title, city, when_ts, deadline_ts,
-      collab: true, closed: false, cancelled: false, is_public: true
-    }).select().single();
+    // 1) plan
+    const planIns = await window.SB.from("plans")
+      .insert({
+        owner_id: user.id,
+        title,
+        city,
+        when_ts,
+        deadline_ts,
+        collab: true,
+        closed: false,
+        cancelled: false,
+        is_public: true,
+      })
+      .select()
+      .single();
     if (planIns.error) throw planIns.error;
 
-    const blockIns = await window.SB.from('plan_blocks').insert({
-      plan_id: planIns.data.id, title: 'Bloque 1', sort_order: 1
-    }).select().single();
+    // 2) bloque
+    const blockIns = await window.SB.from("plan_blocks")
+      .insert({ plan_id: planIns.data.id, title: "Bloque 1", sort_order: 1 })
+      .select()
+      .single();
     if (blockIns.error) throw blockIns.error;
 
-    const rows = list.map(o => ({
+    // 3) opciones (desde window.opts)
+    const rows = window.opts.map((o) => ({
       block_id: blockIns.data.id,
       text: o.t,
       cat: o.cat || null,
       place: null,
       price_num: null,
-      created_by: user.id
+      created_by: user.id,
     }));
-    const optsIns = await window.SB.from('block_options').insert(rows);
-    if (optsIns.error) throw optsIns.error;
+    const optIns = await window.SB.from("block_options").insert(rows);
+    if (optIns.error) throw optIns.error;
 
-    // Navega a votar con tu UI
-    location.hash = '#/votar/' + planIns.data.id;
-    if (typeof window.renderVote === 'function') { await window.renderVote(); }
-    $$('.view').forEach(v => v.classList.remove('on'));
-    $('#votar')?.classList.add('on');
-  };
+    // 4) navega a votar reutilizando tu UI
+    location.hash = "#/votar/" + planIns.data.id;
+    typeof window.renderVote === "function" && window.renderVote();
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("on"));
+    document.getElementById("votar")?.classList.add("on");
+  }
 
-  // Realtime (no obligatorio)
+  // Sólo sobrescribe createShare si SB está disponible; si no, deja la local
+  if (window.SB) {
+    window.createShare = createShareSB;
+  } else if (!window.createShare && typeof window.createShareLocal === "function") {
+    window.createShare = window.createShareLocal;
+  }
+
+  // Realtime (no crítico)
   try {
-    if (sbReady() && typeof window.SB.channel === 'function') {
-      const ch = window.SB.channel('plans-inserts')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'plans' }, (payload) => {
-          log('📥 Nuevo plan:', payload.new);
-        });
-
-      ch.subscribe((status) => log('[Realtime] status:', status));
-    } else {
-      log('[Realtime] SB no disponible o API channel no encontrada');
+    if (window.SB && typeof window.SB.channel === "function") {
+      window.SB.channel("plans-inserts")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "plans" },
+          (payload) => console.log("📥 Nuevo plan en Supabase:", payload.new)
+        )
+        .subscribe((status) => console.log("[Realtime] status:", status));
     }
   } catch (e) {
-    warn('[Realtime] desactivado:', e);
+    console.warn("[Realtime] desactivado:", e);
   }
 })();
