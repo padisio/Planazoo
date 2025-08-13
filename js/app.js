@@ -198,7 +198,7 @@ function addFriendModal(){
 
 /* ====== Crear (wizard) ====== */
 function setStep(n){
-  step=n;
+  step = n;
   qq('.step').forEach(s=>{
     const i=parseInt(s.dataset.s,10);
     s.classList.toggle('on',i===step);
@@ -208,8 +208,12 @@ function setStep(n){
   q('#s'+step)?.classList.add('on');
   q('#pb').disabled = (step===1);
   q('#pn').textContent = step===4 ? 'Finalizar' : 'Continuar →';
-  if(step===4) renderSummary();
+  if (step===4) renderSummary();
+
+  // <-- añade esta línea
+  wireUI();
 }
+
 function prevStep(){ if(step>1) setStep(step-1); }
 function nextStep(){
   if(step===1){
@@ -607,10 +611,46 @@ function track(o){
   st.count++;
   SVE(K.STATS,st);
 }
+// === Enlaces de UI (post-modularización) ===
+function wireUI(){
+  // Botones del wizard
+  const nextBtn = q('#pn');
+  if (nextBtn && !nextBtn.dataset.bound) {
+    nextBtn.addEventListener('click', nextStep);
+    nextBtn.dataset.bound = '1';
+  }
+
+  const prevBtn = q('#pb');
+  if (prevBtn && !prevBtn.dataset.bound) {
+    prevBtn.addEventListener('click', prevStep);
+    prevBtn.dataset.bound = '1';
+  }
+
+  // Paso 4: "Crear y compartir" y "Vista previa de enlace"
+  const s4 = q('#s4');
+  if (s4) {
+    // Botón principal (morado) = Crear y compartir
+    const shareBtn = s4.querySelector('button.btn.p');
+    if (shareBtn && !shareBtn.dataset.bound) {
+      shareBtn.addEventListener('click', () => (window.createShare || createShare)());
+      shareBtn.dataset.bound = '1';
+    }
+    // Botón secundario = Vista previa de enlace
+    const previewBtn = s4.querySelector('button.btn:not(.p)');
+    if (previewBtn && !previewBtn.dataset.bound) {
+      previewBtn.addEventListener('click', sharePreview);
+      previewBtn.dataset.bound = '1';
+    }
+  }
+}
 
 /* ====== Init ====== */
 function renderHome(){ renderHomeC(); tab('home'); hydrateAccount(); }
-document.addEventListener('DOMContentLoaded', renderHome);
+document.addEventListener('DOMContentLoaded', () => {
+  renderHome();
+  wireUI();
+});
+
 
 /* === Modal de sugerencias: mover #sugs dentro del modal (compat) === */
 let _sugs_parent=null, _sugs_next=null;
