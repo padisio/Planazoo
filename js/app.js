@@ -772,3 +772,15 @@ Object.assign(window, {
     window.createShareLocal = createShare;
   }
 })();
+/* === SB-aware overrides (delegan a Supabase si está disponible) === */
+(function(){
+  if (window.SB && typeof window.renderVoteSB === 'function') {
+    window.renderVote = (planId) => window.renderVoteSB(planId);
+  }
+  if (window.SB && typeof window.renderResSB === 'function') {
+    window.renderRes = () => window.renderResSB();
+  }
+  if (window.SB && typeof window.contribSB === 'function') {
+    window.contrib = () => window.contribSB();
+  }
+})();

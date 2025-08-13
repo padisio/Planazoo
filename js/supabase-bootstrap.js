@@ -246,3 +246,284 @@ async function createShareSB() {
     console.warn("[Realtime] desactivado:", e);
   }
 })();
+/* === Votación en tiempo real (Supabase) === */
+(function () {
+  if (!window.SB) return; // si no hay SB, dejamos que app.js use el modo local
+
+  // Estado interno del modo SB
+  const SB_STATE = {
+    plan: null,         // { id, title, deadline_ts, closed, collab }
+    options: [],        // [{ option_id, text, votes, cat, block_id, plan_id }]
+    blocks: [],         // [{ id, sort_order }]
+    channel: null       // suscripción realtime
+  };
+
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  const now = () => Date.now();
+
+  async function fetchPlan(planId) {
+    const planQ = window.SB
+      .from('plans')
+      .select('id,title,deadline_ts,closed,collab')
+      .eq('id', planId)
+      .single();
+
+    const blocksQ = window.SB
+      .from('plan_blocks')
+      .select('id,sort_order')
+      .eq('plan_id', planId)
+      .order('sort_order', { ascending: true });
+
+    const optionsQ = window.SB
+      .from('plan_options_with_counts')
+      .select('*')
+      .eq('plan_id', planId);
+
+    const [{ data: plan, error: e1 },
+           { data: blocks, error: e2 },
+           { data: options, error: e3 }] = await Promise.all([planQ, blocksQ, optionsQ]);
+
+    if (e1) throw e1;
+    if (e2) throw e2;
+    if (e3) throw e3;
+
+    SB_STATE.plan    = plan;
+    SB_STATE.blocks  = blocks || [];
+    SB_STATE.options = (options || []).sort((a,b) => (b.votes - a.votes));
+  }
+
+  function paintVoteUI() {
+    const p = SB_STATE.plan;
+    const options = SB_STATE.options || [];
+
+    if (!p) return;
+
+    // Cabecera y chips
+    const id = p.id;
+    $('#vt').textContent = 'Vota: ' + (p.title || 'Plan');
+    $('#collab').style.display = p.collab ? 'inline-block' : 'none';
+    $('#link').textContent = location.origin + location.pathname + '#/votar/' + id;
+
+    // Lista de opciones
+    const w = $('#vlist');
+    w.innerHTML = '';
+    const isClosed = p.closed || (p.deadline_ts && now() >= Date.parse(p.deadline_ts));
+
+    options.forEach(o => {
+      const d = document.createElement('div');
+      d.className = 'opt';
+      d.innerHTML = `
+        <div class='row' style='justify-content:space-between;align-items:center'>
+          <div style='flex:1'>${o.text}</div>
+          <div class='row' style='gap:10px;align-items:center'>
+            <b>${o.votes || 0}</b>
+            <button class='btn s p' data-opt='${o.option_id}'>Votar</button>
+          </div>
+        </div>`;
+      const btn = d.querySelector('button');
+      btn.disabled = !!isClosed;
+      btn.onclick = () => castVoteSB(o.option_id);
+      w.appendChild(d);
+    });
+
+    // Temporizador
+    clearInterval(window.__pz_timer);
+    window.__pz_timer = setInterval(() => {
+      if (!p.deadline_ts) { $('#rem').textContent = '—'; return; }
+      const r = Math.max(0, Date.parse(p.deadline_ts) - now());
+      $('#rem').textContent = (p.closed ? 'Cerrada' : Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s');
+    }, 500);
+  }
+
+  async function refreshOptionsCounts() {
+    if (!SB_STATE.plan) return;
+    const { data, error } = await window.SB
+      .from('plan_options_with_counts')
+      .select('*')
+      .eq('plan_id', SB_STATE.plan.id);
+    if (error) return;
+    SB_STATE.options = (data || []).sort((a,b)=> (b.votes - a.votes));
+    paintVoteUI();
+  }
+
+  function wireRealtime(planId) {
+    // Limpia suscripción previa
+    try { SB_STATE.channel && window.SB.removeChannel(SB_STATE.channel); } catch (_) {}
+
+    // Nota: filtramos por plan_id en votes; en block_options validamos en callback
+    const ch = window.SB.channel(`plan-${planId}-realtime`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'votes',
+        filter: `plan_id=eq.${planId}`
+      }, async (_payload) => {
+        // Alguien ha votado -> refresca contadores
+        refreshOptionsCounts();
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'block_options'
+      }, async (payload) => {
+        // Nueva opción: si pertenece a un bloque de este plan, refrescamos lista
+        const belongs = (SB_STATE.blocks || []).some(b => b.id === payload.new.block_id);
+        if (belongs) {
+          await refreshOptionsCounts();
+        }
+      });
+
+    ch.subscribe((status) => console.log('[Realtime]', status));
+    SB_STATE.channel = ch;
+  }
+
+  async function castVoteSB(optionId) {
+    try {
+      // requiere login para votar (RLS)
+      const { data: userData } = await window.SB.auth.getUser();
+      if (!userData?.user) { window.openLogin && window.openLogin(); return; }
+
+      const voter_name = $('#vn')?.value?.trim() || null;
+
+      const { error } = await window.SB
+        .from('votes')
+        .insert({
+          plan_id: SB_STATE.plan.id,
+          option_id,
+          user_id: userData.user.id,
+          voter_name
+        });
+      if (error) throw error;
+
+      // Opcional: navegar a resultados inmediatamente, como hacía tu flujo
+      location.hash = '#/res/' + SB_STATE.plan.id;
+      typeof window.renderRes === 'function' && window.renderRes();
+      $$('.view').forEach(v=>v.classList.remove('on'));
+      $('#res')?.classList.add('on');
+    } catch (e) {
+      console.error('[PZ] castVoteSB', e);
+      alert(e?.message || 'No se pudo votar');
+    }
+  }
+
+  async function contribSB() {
+    try {
+      if (!SB_STATE.plan) return;
+      // comprobar cierre
+      const closed = SB_STATE.plan.closed || (SB_STATE.plan.deadline_ts && now() >= Date.parse(SB_STATE.plan.deadline_ts));
+      if (closed) { alert('Cerrada'); return; }
+
+      // login requerido para añadir opción
+      const { data: userData } = await window.SB.auth.getUser();
+      if (!userData?.user) { window.openLogin && window.openLogin(); return; }
+
+      const t = prompt('Añade tu opción'); if (!t) return;
+
+      // Primer bloque del plan (por defecto creamos uno al generar el plan)
+      const blockId = (SB_STATE.blocks[0] && SB_STATE.blocks[0].id) || null;
+      if (!blockId) { alert('No se encontró el bloque del plan'); return; }
+
+      const { error } = await window.SB.from('block_options').insert({
+        block_id: blockId,
+        text: t,
+        cat: null,
+        place: null,
+        price_num: null,
+        created_by: userData.user.id
+      });
+      if (error) throw error;
+      // Realtime añadirá la opción, pero forzamos refresh por si tarda
+      refreshOptionsCounts();
+    } catch (e) {
+      console.error('[PZ] contribSB', e);
+      alert(e?.message || 'No se pudo añadir la opción');
+    }
+  }
+
+  async function renderVoteSB(planIdFromHash) {
+    try {
+      // coge el id del hash si no se pasó
+      const planId =
+        planIdFromHash ||
+        (location.hash.split('/')[2] || '').trim();
+
+      if (!planId) { alert('No existe'); window.tab && window.tab('home'); return; }
+
+      await fetchPlan(planId);
+      paintVoteUI();
+      wireRealtime(planId);
+    } catch (e) {
+      console.error('[PZ] renderVoteSB', e);
+      alert('No existe');
+      window.tab && window.tab('home');
+    }
+  }
+
+  async function renderResSB() {
+    try {
+      const planId = (location.hash.split('/')[2] || '').trim();
+      if (!planId) { alert('No existe'); window.tab && window.tab('home'); return; }
+
+      // reutilizamos la vista para obtener conteos
+      const { data: plan, error: e1 } = await window.SB
+        .from('plans')
+        .select('id,title,deadline_ts,closed')
+        .eq('id', planId).single();
+      if (e1) throw e1;
+      const { data: opts, error: e2 } = await window.SB
+        .from('plan_options_with_counts')
+        .select('*')
+        .eq('plan_id', planId);
+      if (e2) throw e2;
+
+      const w = $('#rlist'); w.innerHTML = '';
+      $('#rt').textContent = 'Resultado: ' + (plan.title || 'Plan');
+
+      const isClosed = plan.closed || (plan.deadline_ts && now() >= Date.parse(plan.deadline_ts));
+      $('#state').textContent = isClosed ? 'Cerrada' : 'Abierta';
+
+      let sum = 0, max = -1, win = null;
+      (opts || []).forEach(o => {
+        sum += (o.votes || 0);
+        if ((o.votes || 0) > max) { max = o.votes || 0; win = o; }
+      });
+
+      (opts || []).forEach(o => {
+        const d = document.createElement('div');
+        d.className = 'opt';
+        d.innerHTML = `<div class='row' style='justify-content:space-between'><div>${o.text}</div><b>${o.votes || 0}</b></div>`;
+        w.appendChild(d);
+      });
+
+      const leaders = (opts || []).filter(o => (o.votes || 0) === max);
+      if (leaders.length > 1 && isClosed) {
+        $('#tie').style.display = 'block';
+        const tw = $('#tieopts'); tw.innerHTML = '';
+        leaders.forEach(o => {
+          const d = document.createElement('div');
+          d.className = 'opt'; d.textContent = o.text; tw.appendChild(d);
+        });
+        $('#win').innerHTML = '<small class="pill">Empate detectado</small>';
+        window.tie = leaders.map(o => o.option_id); // conserva API antigua
+      } else {
+        $('#tie').style.display = 'none';
+        $('#win').innerHTML = win
+          ? `<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`
+          : '<small class="pill">Aún no hay votos</small>';
+      }
+    } catch (e) {
+      console.error('[PZ] renderResSB', e);
+      alert('No existe');
+      window.tab && window.tab('home');
+    }
+  }
+
+  // Exporta funciones SB al global
+  Object.assign(window, {
+    renderVoteSB,
+    renderResSB,
+    castVoteSB,
+    contribSB
+  });
+})();
