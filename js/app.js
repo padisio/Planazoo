@@ -47,7 +47,11 @@ function renderMF(){ const w=q('#mfl'); w.innerHTML=''; friends().forEach(u=>{co
 function addFriendModal(){ const v=q('#mfnew').value.trim(); if(!v) return; const u={id:uid(),name:v.replace(/^@/,''),handle:v.startsWith('@')?v:'@'+v.toLowerCase().replace(/\s+/g,''),avatar:(v.replace(/^@/,'')[0]||'?').toUpperCase()}; saveFriends([...friends(),u]); q('#mfnew').value=''; renderMF(); renderChips(new Set()) }
 
 /* ====== Crear (wizard) ====== */
-let step=1, opts=[]
+// ✅ que sea el mismo array para todo (módulos + global + SB)
+let step = 1;
+window.opts = window.opts || [];
+const opts = window.opts;
+
 function setStep(n){ step=n; qq('.step').forEach(s=>{const i=parseInt(s.dataset.s,10); s.classList.toggle('on',i===step); s.classList.toggle('done',i<step)}); qq('.substep').forEach(x=>x.classList.remove('on')); q('#s'+step).classList.add('on'); q('#pb').disabled=step===1; q('#pn').textContent=step===4?'Finalizar':'Continuar →'; if(step===4) renderSummary() }
 function prevStep(){ if(step>1){ setStep(step-1) } }
 function nextStep(){ if(step===1){ if(!guardDetails()) return; if(!user()) { openLogin(); return } setStep(2) } else if(step===2){ setStep(3) } else if(step===3){ if(opts.length<1){ alert('Añade al menos 1 actividad'); return } setStep(4) } else if(step===4){ createShare() } }
@@ -135,3 +139,58 @@ function closeMSug(){
   document.getElementById('msug').style.display='none';
   document.body.classList.remove('modal-open');
 }
+
+// ---- Exponer API pública a window (para onclick inline y otros módulos) ----
+(() => {
+  const g = {
+    // utilidades
+    q, qq, now, fmt, toLocal,
+    // navegación
+    tab, renderCrear, renderHist, renderFavs, renderStats, renderComm, renderHomeC,
+    // wizard crear
+    setStep, prevStep, nextStep, guardDetails, sharePreview, renderSummary,
+    genSugUI, addManual, ropts,
+    // votar / resultado / compartir
+    renderVote, contrib, goRes, renderRes, closeNow, tRand, tManual, share, publish, publishPlan, openVote, delPlan, cancelPlan,
+    // rate
+    openMR, closeMR, rst, saveRate,
+    // favoritos
+    addFav, addFavText, rfavpick,
+    // prefs y amigos
+    openPrefs, savePrefs, manageFriends, renderMF, addFriendModal, addFriendInput,
+    // auth local (demo) y cuenta
+    openLogin, closeLogin, doLogin, demoLogin, logout, setUser, hydrateAccount,
+    // sugerencias modal
+    openMSug, closeMSug, _ensureSugAnchors, openSug,
+    // constantes por si otros módulos las necesitan
+    K, CATS
+  };
+
+  // publica todo lo disponible
+  Object.keys(g).forEach(k => { if (typeof g[k] !== 'undefined') window[k] = g[k]; });
+
+  // estado global visible
+  window.step = step;
+  window.opts = opts;
+
+  // init seguro tras DOM listo (por si el script no lleva 'defer')
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { try { hydrateAccount?.(); renderHomeC?.(); tab?.('home'); } catch(_){} });
+  } else {
+    try { hydrateAccount?.(); renderHomeC?.(); tab?.('home'); } catch(_) {}
+  }
+})();
+
+// ---- Export mínimos al global para onclick inline ----
+(() => {
+  try {
+    window.nextStep = window.nextStep || nextStep;
+    window.createShare = window.createShare || createShare;
+    // estado compartido
+    window.opts = window.opts || opts;
+    window.step = step;
+  } catch (e) {
+    console.warn('[Planazoo] export globals', e);
+  }
+})();
+
