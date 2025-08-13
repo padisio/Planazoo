@@ -210,18 +210,21 @@ function setStep(n){
   q('#pn').textContent = step===4 ? 'Finalizar' : 'Continuar →';
   if (step===4) renderSummary();
 
-  // <-- añade esta línea
-  wireUI();
+// === Enlaces de UI (post-modularización) ===
+// NO-OP: usamos los onclick del HTML para evitar dobles disparos
+function wireUI(){ /* intencionadamente vacío */ }
+
 }
 
 function prevStep(){ if(step>1) setStep(step-1); }
-
-// Reemplaza tu nextStep por esta versión:
+let __nextStepBusy = false;
 window.nextStep = async function () {
+  if (__nextStepBusy) return;         // evita llamadas dobles en el mismo tick
+  __nextStepBusy = true;
   try {
-    // Paso 1 -> 2
     if (typeof step === 'undefined') window.step = 1;
 
+    // Paso 1 -> 2
     if (step === 1) {
       if (typeof guardDetails === 'function' && !guardDetails()) return;
 
@@ -251,22 +254,24 @@ window.nextStep = async function () {
 
     // Paso 4 -> crear
     if (step === 4) {
-      if (typeof window.createShare === 'function') {
-        await window.createShare();
-      } else if (typeof window.createShareLocal === 'function') {
-        await window.createShareLocal();
-      } else if (typeof createShare === 'function') {
-        await createShare();
-      } else {
-        alert('No encuentro la función para crear el plan.');
-      }
+      const fn =
+        (typeof window.createShare === 'function' && window.createShare) ||
+        (typeof window.createShareLocal === 'function' && window.createShareLocal) ||
+        (typeof createShare === 'function' && createShare);
+
+      if (!fn) { alert('No encuentro la función para crear el plan.'); return; }
+      await fn();
       return;
     }
   } catch (e) {
     console.error('[PZ] nextStep error:', e);
     alert(e?.message || 'No se pudo continuar. Revisa la consola.');
+  } finally {
+    // libera el candado tras el ciclo de eventos actual
+    setTimeout(() => { __nextStepBusy = false; }, 0);
   }
 };
+
 
 function guardDetails(){
   const title=q('#pt').value.trim();
@@ -760,39 +765,10 @@ Object.assign(window, {
   // estado
   opts, // por si otro archivo necesita acceder
 });
-/* === Planazoo: arnés de eventos & fallback de createShare (FIX) === */
+/* === Planazoo: fallback de createShare (sin delegación de clicks) === */
 (() => {
-  // Debug opcional
-  window.__PZ_DEBUG = true;
-
   // Asegura que la función local quede accesible por si Supabase no está
   if (typeof window.createShareLocal !== 'function' && typeof createShare === 'function') {
     window.createShareLocal = createShare;
-  }
-  // Si no existe window.createShare (por orden de carga), pon la local
-  if (typeof window.createShare !== 'function' && typeof window.createShareLocal === 'function') {
-    window.createShare = window.createShareLocal;
-  }
-
-  // (SIN delegación global de clicks) – deja que wireUI() maneje #pn y #pb
-  const _nextStep = (typeof nextStep === 'function') ? nextStep : null;
-  if (_nextStep) {
-    window.nextStep = function wrappedNextStep() {
-      if (window.__PZ_DEBUG) {
-        const len = (Array.isArray(window.opts) && window.opts.length) || 0;
-        console.debug('[PZ] nextStep()', { step, optsLen: len });
-      }
-      return _nextStep.apply(this, arguments);
-    };
-  }
-
-  // Tras cambiar de paso, vuelve a cablear botones por si se re-renderiza
-  const _setStep = (typeof setStep === 'function') ? setStep : null;
-  if (_setStep) {
-    window.setStep = function wrappedSetStep(n) {
-      const r = _setStep.apply(this, arguments);
-      if (typeof wireUI === 'function') wireUI(); // asegura 1 solo binding
-      return r;
-    };
   }
 })();
