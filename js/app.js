@@ -760,99 +760,39 @@ Object.assign(window, {
   // estado
   opts, // por si otro archivo necesita acceder
 });
-/* === Planazoo: arnés de eventos & fallback de createShare === */
+/* === Planazoo: arnés de eventos & fallback de createShare (FIX) === */
 (() => {
   // Debug opcional
   window.__PZ_DEBUG = true;
-
-  // Llama al handler activo (SB override si existe, si no, local)
-  async function callCreateShare() {
-    const fn =
-      (typeof window.createShare === 'function' && window.createShare) ||
-      (typeof window.createShareLocal === 'function' && window.createShareLocal) ||
-      (typeof createShare === 'function' && createShare);
-
-    if (window.__PZ_DEBUG) {
-      console.debug('[PZ] Finalizar -> handler:', fn && fn.name);
-    }
-
-    if (!fn) {
-      alert('No hay ningún handler para crear el plan (createShare).');
-      return;
-    }
-
-    try {
-      await fn();
-    } catch (err) {
-      console.error('[PZ] createShare error:', err);
-      alert(err?.message || 'No se pudo crear el plan. Revisa la consola.');
-    }
-  }
 
   // Asegura que la función local quede accesible por si Supabase no está
   if (typeof window.createShareLocal !== 'function' && typeof createShare === 'function') {
     window.createShareLocal = createShare;
   }
-
-  // Delegación global de clicks (resistente a redibujados)
-  function delegateUI() {
-    document.addEventListener(
-      'click',
-      (e) => {
-        const $ = (sel) => e.target.closest && e.target.closest(sel);
-
-        // Botón "Continuar/Finalizar" del wizard
-        if ($('#pn')) {
-          e.preventDefault();
-          if (window.__PZ_DEBUG) console.debug('[PZ] click #pn (nextStep) step=', typeof step !== 'undefined' ? step : 'n/a');
-          if (typeof nextStep === 'function') nextStep();
-          return;
-        }
-
-        // Botón "Atrás"
-        if ($('#pb')) {
-          e.preventDefault();
-          if (window.__PZ_DEBUG) console.debug('[PZ] click #pb (prevStep)');
-          if (typeof prevStep === 'function') prevStep();
-          return;
-        }
-
-        // Paso 4: "Crear y compartir" (botón morado)
-        if ($('#s4 .btn.p')) {
-          e.preventDefault();
-          if (window.__PZ_DEBUG) console.debug('[PZ] click Crear y compartir');
-          callCreateShare();
-          return;
-        }
-
-        // Paso 4: "Vista previa de enlace"
-        if ($('#s4 .btn:not(.p)')) {
-          e.preventDefault();
-          if (window.__PZ_DEBUG) console.debug('[PZ] click Vista previa de enlace');
-          if (typeof sharePreview === 'function') sharePreview();
-          return;
-        }
-      },
-      { capture: true }
-    );
+  // Si no existe window.createShare (por orden de carga), pon la local
+  if (typeof window.createShare !== 'function' && typeof window.createShareLocal === 'function') {
+    window.createShare = window.createShareLocal;
   }
 
-  // Log útil para saber por qué podría no avanzar
-  const _nextStep = typeof nextStep === 'function' ? nextStep : null;
+  // (SIN delegación global de clicks) – deja que wireUI() maneje #pn y #pb
+  const _nextStep = (typeof nextStep === 'function') ? nextStep : null;
   if (_nextStep) {
     window.nextStep = function wrappedNextStep() {
       if (window.__PZ_DEBUG) {
-        const len = (Array.isArray(window.opts) && window.opts.length) || 'n/a';
-        console.debug('[PZ] nextStep()', { step: typeof step !== 'undefined' ? step : 'n/a', optsLen: len });
+        const len = (Array.isArray(window.opts) && window.opts.length) || 0;
+        console.debug('[PZ] nextStep()', { step, optsLen: len });
       }
       return _nextStep.apply(this, arguments);
     };
   }
 
-  // Arranque
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', delegateUI, { once: true });
-  } else {
-    delegateUI();
+  // Tras cambiar de paso, vuelve a cablear botones por si se re-renderiza
+  const _setStep = (typeof setStep === 'function') ? setStep : null;
+  if (_setStep) {
+    window.setStep = function wrappedSetStep(n) {
+      const r = _setStep.apply(this, arguments);
+      if (typeof wireUI === 'function') wireUI(); // asegura 1 solo binding
+      return r;
+    };
   }
 })();

@@ -107,80 +107,122 @@
     return u;
   }
 
-  // --- Implementación Supabase de createShare ---
-  async function createShareSB() {
-    if (!window.SB) throw new Error("Supabase no disponible");
+// --- Implementación Supabase de createShare (con espejo a localStorage) ---
+async function createShareSB() {
+  if (!window.SB) throw new Error("Supabase no disponible");
 
-    const $ = (s) => document.querySelector(s);
-    const toISO = (v) => (v ? new Date(v).toISOString() : new Date().toISOString());
+  const $ = (s) => document.querySelector(s);
+  const toISO = (v) => (v ? new Date(v).toISOString() : new Date().toISOString());
 
-    if (typeof window.guardDetails === "function" && !window.guardDetails()) return;
+  // Utilidades locales por si U/SVE no existen en este archivo
+  const getLS = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const setLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
-    const user = await requireLogin();
+  // 1) Validaciones previas
+  if (typeof window.guardDetails === "function" && !window.guardDetails()) return;
 
-    if (!Array.isArray(window.opts) || window.opts.length < 1) {
-      alert("Añade al menos 1 actividad");
-      return;
+  const user = await (async function requireLogin() {
+    const { data } = await window.SB.auth.getUser();
+    const u = data?.user || null;
+    if (!u) {
+      window.openLogin && window.openLogin();
+      throw new Error("Inicia sesión para crear");
     }
+    return u;
+  })();
 
-    const title = $("#pt")?.value?.trim();
-    const city = $("#pc")?.value?.trim() || null;
-    const whenInput = $("#pd")?.value;
-    const dlMin = Math.max(
-      10,
-      Math.min(1440, parseInt($("#pl")?.value || "120", 10))
-    );
-
-    if (!title || !whenInput) {
-      alert("Completa título y fecha/hora");
-      return;
-    }
-
-    const when_ts = toISO(whenInput);
-    const deadline_ts = new Date(Date.now() + dlMin * 60000).toISOString();
-
-    // 1) plan
-    const planIns = await window.SB.from("plans")
-      .insert({
-        owner_id: user.id,
-        title,
-        city,
-        when_ts,
-        deadline_ts,
-        collab: true,
-        closed: false,
-        cancelled: false,
-        is_public: true,
-      })
-      .select()
-      .single();
-    if (planIns.error) throw planIns.error;
-
-    // 2) bloque
-    const blockIns = await window.SB.from("plan_blocks")
-      .insert({ plan_id: planIns.data.id, title: "Bloque 1", sort_order: 1 })
-      .select()
-      .single();
-    if (blockIns.error) throw blockIns.error;
-
-    // 3) opciones (desde window.opts)
-    const rows = window.opts.map((o) => ({
-      block_id: blockIns.data.id,
-      text: o.t,
-      cat: o.cat || null,
-      place: null,
-      price_num: null,
-      created_by: user.id,
-    }));
-    const optIns = await window.SB.from("block_options").insert(rows);
-    if (optIns.error) throw optIns.error;
-
-    // 4) navega a votar reutilizando tu UI
-    location.hash = "#/votar/" + planIns.data.id;
-    typeof window.renderVote === "function" && window.renderVote();
-    document.querySelectorAll(".view").forEach((v) => v.classList.remove("on"));
-    document.getElementById("votar")?.classList.add("on");
+  if (!Array.isArray(window.opts) || window.opts.length < 1) {
+    alert("Añade al menos 1 actividad");
+    return;
   }
+
+  const title = $("#pt")?.value?.trim();
+  const city = $("#pc")?.value?.trim() || null;
+  const whenInput = $("#pd")?.value;
+  const dlMin = Math.max(10, Math.min(1440, parseInt($("#pl")?.value || "120", 10)));
+
+  if (!title || !whenInput) {
+    alert("Completa título y fecha/hora");
+    return;
+  }
+
+  const when_ts = toISO(whenInput);
+  const deadline_ts = new Date(Date.now() + dlMin * 60000).toISOString();
+
+  // 2) Inserta plan
+  const planIns = await window.SB.from("plans")
+    .insert({
+      owner_id: user.id,
+      title,
+      city,
+      when_ts,
+      deadline_ts,
+      collab: true,
+      closed: false,
+      cancelled: false,
+      is_public: true,
+    })
+    .select()
+    .single();
+  if (planIns.error) throw planIns.error;
+
+  // 3) Inserta bloque
+  const blockIns = await window.SB.from("plan_blocks")
+    .insert({ plan_id: planIns.data.id, title: "Bloque 1", sort_order: 1 })
+    .select()
+    .single();
+  if (blockIns.error) throw blockIns.error;
+
+  // 4) Inserta opciones (desde window.opts)
+  const rows = window.opts.map((o) => ({
+    block_id: blockIns.data.id,
+    text: o.t,
+    cat: o.cat || null,
+    place: null,
+    price_num: null,
+    created_by: user.id,
+  }));
+  const optIns = await window.SB.from("block_options").insert(rows);
+  if (optIns.error) throw optIns.error;
+
+  // 5) PATCH: espejo a localStorage para que renderVote() encuentre el plan
+  //    (la UI legacy lee K.POLLS de localStorage)
+  const K_POLLS = "pz_polls";
+  const invitedRaw = ($("#chips")?.dataset.sel || "[]");
+  let invited = [];
+  try { invited = JSON.parse(invitedRaw || "[]"); } catch { invited = []; }
+
+  const optionsLS = (Array.isArray(window.opts) ? window.opts : []).map((o, i) => ({
+    id: i,
+    text: o.t,
+    votes: 0,
+    meta: o.cat ? { cat: o.cat } : null,
+  }));
+
+  const polls = getLS(K_POLLS, {});
+  polls[planIns.data.id] = {
+    id: planIns.data.id,
+    title,
+    options: optionsLS,
+    createdAt: Date.now(),
+    deadline: new Date(deadline_ts).getTime(), // número (ms) para tu UI
+    when: new Date(when_ts).getTime(),         // número (ms) para tu UI
+    closed: false,
+    collab: true,
+    invited,
+    owner: user.email || user.id,
+    rating: 0,
+    cancelled: false,
+  };
+  setLS(K_POLLS, polls);
+
+  // 6) Navega a votar y reutiliza tu UI
+  location.hash = "#/votar/" + planIns.data.id;
+  if (typeof window.renderVote === "function") window.renderVote();
+  document.querySelectorAll(".view").forEach((v) => v.classList.remove("on"));
+  document.getElementById("votar")?.classList.add("on");
+}
+
 
   // Sólo sobrescribe createShare si SB está disponible; si no, deja la local
   if (window.SB) {
