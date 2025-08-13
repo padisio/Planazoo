@@ -215,21 +215,59 @@ function setStep(n){
 }
 
 function prevStep(){ if(step>1) setStep(step-1); }
-function nextStep(){
-  if(step===1){
-    if(!guardDetails()) return;
-    if(!user()) { openLogin(); return; }
-    setStep(2);
-  } else if(step===2){
-    setStep(3);
-  } else if(step===3){
-    if(opts.length<1){ alert('Añade al menos 1 actividad'); return; }
-    setStep(4);
-  } else if(step===4){
-    // usar createShare global (local o la de Supabase si ya la sobrescribió)
-    (window.createShare || createShare)();
+
+// Reemplaza tu nextStep por esta versión:
+window.nextStep = async function () {
+  try {
+    // Paso 1 -> 2
+    if (typeof step === 'undefined') window.step = 1;
+
+    if (step === 1) {
+      if (typeof guardDetails === 'function' && !guardDetails()) return;
+
+      const isLogged =
+        (window.__pz_is_logged === true) ||
+        (typeof user === 'function' && !!user());
+
+      if (!isLogged) { window.openLogin?.(); return; }
+
+      setStep(2);
+      return;
+    }
+
+    // Paso 2 -> 3
+    if (step === 2) {
+      setStep(3);
+      return;
+    }
+
+    // Paso 3 -> 4 (requiere al menos 1 actividad)
+    if (step === 3) {
+      const hasOpts = Array.isArray(window.opts) && window.opts.length > 0;
+      if (!hasOpts) { alert('Añade al menos 1 actividad'); return; }
+      setStep(4);
+      return;
+    }
+
+    // Paso 4 -> crear
+    if (step === 4) {
+      if (typeof window.createShare === 'function') {
+        await window.createShare();
+      } else if (typeof window.createShareLocal === 'function') {
+        await window.createShareLocal();
+      } else if (typeof createShare === 'function') {
+        await createShare();
+      } else {
+        alert('No encuentro la función para crear el plan.');
+      }
+      return;
+    }
+  } catch (e) {
+    console.error('[PZ] nextStep error:', e);
+    alert(e?.message || 'No se pudo continuar. Revisa la consola.');
   }
-}
+};
+
 function guardDetails(){
   const title=q('#pt').value.trim();
   const dt=q('#pd').value;

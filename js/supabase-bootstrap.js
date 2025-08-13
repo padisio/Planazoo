@@ -1,148 +1,141 @@
-// === Supabase bootstrap (idempotente) ===
-window.SUPABASE_URL = window.SUPABASE_URL || "https://ggxdzwjlkqqznpzrfayl.supabase.co";
-window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdneGR6d2psa3Fxem5wenJmYXlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MTY4NDksImV4cCI6MjA3MDQ5Mjg0OX0.wHb_QV4t_MHSQNyBXrU3k-MTUWXn4fwhwNOw4YscyWc";
+// js/supabase-bootstrap.js
+// Bootstrap robusto de Supabase + override fiable de createShare()
 
-if (!window.SB && window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
-  window.SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
-    auth: { storageKey: 'planazoo-auth' }
-  });
-}
+(function () {
+  const $  = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-// === Auth wiring + Magic Link handler (idempotente) ===
-(function(){
-  function wireAuth(){
-    if (!window.SB || window.__pz_auth_wired) return;
-    window.__pz_auth_wired = true;
-    try{
+  function log()  { try { console.log('[Supabase]', ...arguments); } catch(_){} }
+  function warn() { try { console.warn('[Supabase]', ...arguments); } catch(_){} }
+  function err()  { try { console.error('[Supabase]', ...arguments); } catch(_){} }
+
+  // Crear cliente (una sola vez)
+  if (!window.SB && window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
+    window.SB = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+      auth: { storageKey: 'planazoo-auth' }
+    });
+  }
+
+  function sbReady() {
+    return !!(window.SB && window.SB.auth && window.SB.from);
+  }
+
+  async function refreshAuthFlag() {
+    try {
+      if (!sbReady()) { window.__pz_is_logged = !!(window.user && window.user()); return; }
+      const { data: { user } } = await window.SB.auth.getUser();
+      window.__pz_is_logged = !!user;
+    } catch (_) {
+      window.__pz_is_logged = !!(window.user && window.user());
+    }
+  }
+
+  // Wire auth state changes
+  (async function wireAuth() {
+    if (!sbReady()) { await refreshAuthFlag(); return; }
+    await refreshAuthFlag();
+    try {
       window.SB.auth.onAuthStateChange(async (_event, session) => {
-        if (session && session.user){
-          try{
-            if (typeof setUser === 'function'){
-              setUser({ name: session.user.email?.split('@')[0] || 'Usuario', email: session.user.email || '' });
-            }
-            try{
-              await window.SB.from('users').upsert({
-                id: session.user.id,
-                email: session.user.email,
-                name: session.user.user_metadata?.name || null
-              });
-            }catch(_){}
-            if (typeof closeLogin === 'function') closeLogin();
-            try { alert('Sesión iniciada'); } catch(_){}
-          }catch(e){ console.warn('[Planazoo] post-auth actions', e); }
+        window.__pz_is_logged = !!(session && session.user);
+        if (session && session.user && typeof window.setUser === 'function') {
+          try {
+            window.setUser({ name: session.user.email?.split('@')[0] || 'Usuario', email: session.user.email || '' });
+          } catch(_) {}
         }
       });
-    }catch(e){ console.warn('[Planazoo] onAuthStateChange wiring failed', e); }
-  }
+    } catch (e) {
+      warn('onAuthStateChange wiring failed', e);
+    }
+  })();
 
-  async function handleMagicReturn(){
-    try{
-      const h = window.location.hash && window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
-      if (!h) { wireAuth(); return; }
-      const p = new URLSearchParams(h);
-      const at = p.get('access_token');
-      const rt = p.get('refresh_token');
-      if (at && rt && window.SB){
-        await window.SB.auth.setSession({ access_token: at, refresh_token: rt });
-        history.replaceState({}, document.title, location.pathname + location.search);
-      }
-    }catch(e){ console.warn('[Planazoo] handleMagicReturn', e); }
-    wireAuth();
-  }
-
-  // Reemplazamos doLogin por Magic Link si SB está disponible
-  window.doLogin = async function(){
-    const e = document.querySelector('#le')?.value?.trim();
-    if(!e){ alert('Escribe tu email'); return; }
-    if(!window.SB){ alert('Auth no disponible.'); return; }
-    try{
-      await window.SB.auth.signInWithOtp({ email: e });
-      alert('Te he enviado un enlace de acceso. Abre tu correo y pulsa el botón para entrar.');
-    }catch(err){
-      alert('Error enviando enlace: '+(err?.message||err));
+  // Login por Magic Link (sobrescribe si ya existía una versión local)
+  window.doLogin = async function () {
+    try {
+      const email = $('#le')?.value?.trim();
+      if (!email) { alert('Escribe tu email'); return; }
+      if (!sbReady()) { alert('Login no disponible (Supabase no inicializado)'); return; }
+      await window.SB.auth.signInWithOtp({ email });
+      alert('Te envié un enlace por email. Ábrelo para entrar.');
+    } catch (e) {
+      alert('Error enviando enlace: ' + (e?.message || e));
     }
   };
 
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', handleMagicReturn);
-  } else {
-    handleMagicReturn();
-  }
-})();
+  // Helper para ISO
+  const toISO = (v) => (v ? new Date(v).toISOString() : new Date().toISOString());
 
-// === Override createShare para usar Supabase si está disponible ===
-(function(){
-  const toISO=v=>v?new Date(v).toISOString():new Date().toISOString();
-  async function requireLogin(){
-    const u=(await SB.auth.getUser()).data.user;
-    if(!u){ openLogin?.(); alert('Inicia sesión para crear'); throw new Error('No logueado'); }
-    return u;
-  }
-
-  if (window.SB){
-    const localCreate = window.createShare;
-    window.createShare = async function(){
-      try{
-        if(typeof guardDetails==='function' && !guardDetails()) return;
-        const user = await requireLogin();
-
-        const title = document.querySelector('#pt')?.value?.trim();
-        const city  = document.querySelector('#pc')?.value?.trim() || null;
-        const dlMin = Math.max(10, Math.min(1440, parseInt(document.querySelector('#pl')?.value || '120',10)));
-        const whenInput = document.querySelector('#pd')?.value;
-        if(!title || !whenInput){ alert('Completa título y fecha/hora'); return; }
-        if(!window.opts || !window.opts.length){ alert('Añade al menos 1 actividad'); return; }
-
-        const when_ts = toISO(whenInput);
-        const deadline_ts = new Date(Date.now()+dlMin*60000).toISOString();
-
-        const planIns = await SB.from('plans').insert({
-          owner_id: user.id,
-          title, city, when_ts, deadline_ts,
-          collab: true, closed: false, cancelled: false, is_public: true
-        }).select().single();
-        if(planIns.error){ console.error(planIns.error); alert('Error plan: '+planIns.error.message); return; }
-
-        const blockIns = await SB.from('plan_blocks').insert({
-          plan_id: planIns.data.id, title:'Bloque 1', sort_order:1
-        }).select().single();
-        if(blockIns.error){ console.error(blockIns.error); alert('Error bloque: '+blockIns.error.message); return; }
-
-        const rows = window.opts.map(o=>({
-          block_id: blockIns.data.id,
-          text: o.t,
-          cat: o.cat || null,
-          place: null,
-          price_num: null,
-          created_by: user.id
-        }));
-        const optsIns = await SB.from('block_options').insert(rows);
-        if(optsIns.error){ console.error(optsIns.error); alert('Error opciones: '+optsIns.error.message); return; }
-
-        location.hash = '#/votar/'+planIns.data.id;
-        if(typeof window.renderVote === 'function'){ await window.renderVote(); }
-        document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
-        document.querySelector('#votar')?.classList.add('on');
-      }catch(e){
-        console.error('[Planazoo] createShare', e);
-        alert('No se pudo crear el plan (ver consola).');
-        try{ if (typeof localCreate==='function') localCreate(); }catch(_){}
+  // Override único y visible en window
+  window.createShare = async function () {
+    // SB no disponible: usa la versión local si existe
+    if (!sbReady()) {
+      if (typeof window.createShareLocal === 'function') {
+        return window.createShareLocal();
       }
-    };
-  }
+      throw new Error('Supabase no disponible y no hay createShareLocal');
+    }
 
-  // Realtime example (best-effort)
-  try{
-    if (window.SB && typeof SB.channel === 'function') {
-      const ch = SB.channel('plans-inserts')
+    // Validación de UI
+    const title = $('#pt')?.value?.trim();
+    const city  = $('#pc')?.value?.trim() || null;
+    const dlMin = Math.max(10, Math.min(1440, parseInt($('#pl')?.value || '120', 10)));
+    const whenInput = $('#pd')?.value;
+
+    if (!title || !whenInput) throw new Error('Completa título y fecha/hora');
+
+    const list = Array.isArray(window.opts) ? window.opts : [];
+    if (!list.length) throw new Error('Añade al menos 1 actividad');
+
+    // Requiere usuario
+    const { data: { user } } = await window.SB.auth.getUser();
+    if (!user) { window.openLogin?.(); throw new Error('Inicia sesión para crear'); }
+
+    // Inserta plan + bloque + opciones
+    const when_ts = toISO(whenInput);
+    const deadline_ts = new Date(Date.now() + dlMin * 60000).toISOString();
+
+    const planIns = await window.SB.from('plans').insert({
+      owner_id: user.id,
+      title, city, when_ts, deadline_ts,
+      collab: true, closed: false, cancelled: false, is_public: true
+    }).select().single();
+    if (planIns.error) throw planIns.error;
+
+    const blockIns = await window.SB.from('plan_blocks').insert({
+      plan_id: planIns.data.id, title: 'Bloque 1', sort_order: 1
+    }).select().single();
+    if (blockIns.error) throw blockIns.error;
+
+    const rows = list.map(o => ({
+      block_id: blockIns.data.id,
+      text: o.t,
+      cat: o.cat || null,
+      place: null,
+      price_num: null,
+      created_by: user.id
+    }));
+    const optsIns = await window.SB.from('block_options').insert(rows);
+    if (optsIns.error) throw optsIns.error;
+
+    // Navega a votar con tu UI
+    location.hash = '#/votar/' + planIns.data.id;
+    if (typeof window.renderVote === 'function') { await window.renderVote(); }
+    $$('.view').forEach(v => v.classList.remove('on'));
+    $('#votar')?.classList.add('on');
+  };
+
+  // Realtime (no obligatorio)
+  try {
+    if (sbReady() && typeof window.SB.channel === 'function') {
+      const ch = window.SB.channel('plans-inserts')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'plans' }, (payload) => {
-          console.log('📥 Nuevo plan en Supabase:', payload.new);
+          log('📥 Nuevo plan:', payload.new);
         });
-      ch.subscribe((status) => console.log('[Realtime] status:', status));
+
+      ch.subscribe((status) => log('[Realtime] status:', status));
     } else {
-      console.log('[Realtime] SB no disponible o API channel no encontrada');
+      log('[Realtime] SB no disponible o API channel no encontrada');
     }
   } catch (e) {
-    console.warn('[Realtime] desactivado:', e);
+    warn('[Realtime] desactivado:', e);
   }
 })();
