@@ -213,33 +213,40 @@ function setStep(n){
 }
 function prevStep(){ if(step>1) setStep(step-1); }
 
+// nextStep robusto (mantener)
 window.nextStep = async function () {
   try {
-    if (typeof step === 'undefined') window.step = 1;
-    if (step === 1) {
+    const cur = typeof step === 'number' ? step : 1;
+
+    if (cur === 1) {
       if (typeof guardDetails === 'function' && !guardDetails()) return;
-      const isLogged =
-        (window.__pz_is_logged === true) ||
-        (typeof user === 'function' && !!user());
-      if (!isLogged && !useSB()) { window.openLogin?.(); return; }
-      setStep(2); return;
+      const isLogged = (window.__pz_is_logged === true) || (typeof user === 'function' && !!user());
+      if (!isLogged) { window.openLogin?.(); return; }
+      setStep(2);
+      return;
     }
-    if (step === 2) { setStep(3); return; }
-    if (step === 3) {
+    if (cur === 2) { setStep(3); return; }
+    if (cur === 3) {
       const hasOpts = Array.isArray(window.opts) && window.opts.length > 0;
       if (!hasOpts) { alert('Añade al menos 1 actividad'); return; }
-      setStep(4); return;
+      setStep(4);
+      return; // <- crucial
     }
-    if (step === 4) {
-      const fn = (window.createShare || window.createShareLocal || createShare);
+    if (cur === 4) {
+      const fn =
+        (typeof window.createShare === 'function' && window.createShare) ||
+        (typeof window.createShareLocal === 'function' && window.createShareLocal) ||
+        (typeof createShare === 'function' && createShare);
       if (!fn) { alert('No encuentro la función para crear el plan.'); return; }
-      await fn(); return;
+      await fn();
+      return;
     }
   } catch (e) {
     console.error('[PZ] nextStep error:', e);
     alert(e?.message || 'No se pudo continuar. Revisa la consola.');
   }
 };
+
 
 function guardDetails(){
   const title=q('#pt').value.trim();
@@ -860,18 +867,25 @@ Object.assign(window, {
   opts
 });
 
-/* === Arnés de eventos === */
+/* === Planazoo: arnés mínimo (sin capturar clicks globales) === */
 (() => {
   window.__PZ_DEBUG = true;
-  function delegateUI() {
-    document.addEventListener('click',(e)=>{
-      const $ = (sel)=> e.target.closest && e.target.closest(sel);
-      if ($('#pn')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click #pn step=', step); nextStep(); return; }
-      if ($('#pb')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click #pb'); prevStep(); return; }
-      if ($('#s4 .btn.p')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click Crear y compartir'); (window.createShare || createShare)(); return; }
-      if ($('#s4 .btn:not(.p)')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click Vista previa'); sharePreview(); return; }
-    }, { capture:true });
+
+  // Asegura fallback local si SB no lo sobreescribe
+  if (typeof window.createShareLocal !== 'function' && typeof createShare === 'function') {
+    window.createShareLocal = createShare;
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', delegateUI, { once:true });
-  else delegateUI();
+
+  // Log de nextStep (no duplicamos listeners)
+  if (typeof window.nextStep === 'function') {
+    const _next = window.nextStep;
+    window.nextStep = function () {
+      if (window.__PZ_DEBUG) {
+        const len = (Array.isArray(window.opts) && window.opts.length) || 0;
+        console.debug('[PZ] nextStep()', { step, optsLen: len });
+      }
+      return _next.apply(this, arguments);
+    };
+  }
 })();
+
