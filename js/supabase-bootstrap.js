@@ -161,14 +161,14 @@
       return await window.SB.from('plans').select('id,title,deadline_ts,closed').eq('id', plan_id).single();
     },
     async fetchOptionsWithCounts(plan_id){
-  // La vista no tiene created_at en tu caso. No ordenes aquí.
-     const { data, error } = await window.SB
-      .from('plan_options_with_counts')
-      .select('option_id,plan_id,text,votes') // pide solo lo que usas
-      .eq('plan_id', plan_id);
+  // La vista no tiene created_at: NO ordenes aquí.
+      const { data, error } = await window.SB
+        .from('plan_options_with_counts')
+        .select('option_id,plan_id,text,votes')
+        .eq('plan_id', plan_id);
 
-     if (error) throw error;
-     return { data, error: null };
+      if (error) throw error;
+      return { data, error: null };
     },
     async getMyVote(plan_id){
       const u = await requireLogin();
@@ -203,4 +203,72 @@
         .subscribe((status) => console.log("[Realtime] status:", status));
     }
   } catch (e) { console.warn("[Realtime] desactivado:", e); }
+})();
+// === Voting helpers (SB) ===
+(function(){
+  if (!window.SB) return;
+
+  async function fetchPlan(planId){
+    const { data, error } = await SB.from('plans').select('id, closed, deadline_ts').eq('id', planId).single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function fetchOptions(planId){
+    // vista: plan_options_with_counts
+    const { data, error } = await SB
+      .from('plan_options_with_counts')
+      .select('*')
+      .eq('plan_id', planId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function getMyVote(planId){
+    const { data:usr } = await SB.auth.getUser();
+    const uid = usr?.user?.id;
+    if (!uid) return null;
+    const { data, error } = await SB
+      .from('votes')
+      .select('option_id')
+      .eq('plan_id', planId)
+      .eq('user_id', uid)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.option_id || null;
+  }
+
+  async function castVote(planId, optionId){
+    const { data:usr } = await SB.auth.getUser();
+    const uid = usr?.user?.id;
+    if (!uid) { throw new Error('No logueado'); }
+    const { data, error } = await SB
+      .from('votes')
+      .upsert(
+        { plan_id: planId, user_id: uid, option_id: optionId },
+        { onConflict: 'plan_id,user_id', ignoreDuplicates: false }
+      )
+      .select();
+    if (error) throw error;
+    return data;
+  }
+
+  async function closePlan(planId){
+    const { error } = await SB.from('plans').update({ closed: true }).eq('id', planId);
+    if (error) throw error;
+  }
+
+  function subscribe(planId, cb){
+    const ch = SB.channel('realtime-votes-'+planId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'votes', filter: 'plan_id=eq.'+planId }, () => cb?.('votes'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'block_options' }, (payload) => {
+        if (payload?.new?.plan_id === planId || payload?.old?.plan_id === planId) cb?.('options');
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'plans', filter: 'id=eq.'+planId }, () => cb?.('plan'))
+      .subscribe();
+    return () => { try{ SB.removeChannel(ch); }catch(_){} };
+  }
+
+  window.voting = { fetchPlan, fetchOptions, getMyVote, castVote, closePlan, subscribe };
 })();
