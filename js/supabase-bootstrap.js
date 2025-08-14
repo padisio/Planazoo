@@ -389,12 +389,14 @@ async function createShareSB() {
       const { error } = await window.SB
         .from('votes')
         .insert({
-          plan_id: SB_STATE.plan.id,
+          // plan_id: lo rellena el trigger
           option_id,
           user_id: userData.user.id,
           voter_name
         });
       if (error) throw error;
+      
+      await refreshOptionsCounts(); // si tienes esa función accesible aquí
 
       // Opcional: navegar a resultados inmediatamente, como hacía tu flujo
       location.hash = '#/res/' + SB_STATE.plan.id;
