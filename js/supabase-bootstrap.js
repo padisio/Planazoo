@@ -395,7 +395,7 @@ async function createShareSB() {
           voter_name
         });
       if (error) throw error;
-      
+
       await refreshOptionsCounts(); // si tienes esa función accesible aquí
 
       // Opcional: navegar a resultados inmediatamente, como hacía tu flujo
@@ -520,6 +520,183 @@ async function createShareSB() {
       window.tab && window.tab('home');
     }
   }
+  // ====== VOTING & RESULTS overrides (SB) ======
+(function(){
+  if (!window.SB) return; // si no hay Supabase, seguimos usando la versión local
+
+  const $ = (s) => document.querySelector(s);
+
+  async function fetchPlanAndOptions(planId){
+    // plan
+    const p = await window.SB.from('plans')
+      .select('id,title,deadline_ts,collab,closed,cancelled')
+      .eq('id', planId)
+      .single();
+    if (p.error) throw p.error;
+    // opciones + votos (vista)
+    const o = await window.SB.from('plan_options_with_counts')
+      .select('option_id,text,cat,block_id,plan_id,votes')
+      .eq('plan_id', planId)
+      .order('option_id', { ascending: true });
+    if (o.error) throw o.error;
+
+    return { plan: p.data, options: o.data || [] };
+  }
+
+  async function castVoteSB(planId, optionId){
+    const name = $('#vn')?.value?.trim();
+    if (!name){ alert('Pon tu nombre'); return; }
+
+    // guardamos el nombre localmente como hacía tu versión
+    try { localStorage.setItem('pz_nombre', name); } catch(_){}
+
+    // requerir login (como en createShare)
+    const { data: userData } = await window.SB.auth.getUser();
+    if (!userData?.user){ window.openLogin && window.openLogin(); return; }
+
+    // Insertamos voto. El trigger set_vote_plan_id rellenará plan_id desde option_id
+    const ins = await window.SB.from('votes').insert({
+      option_id: optionId,
+      user_id: userData.user.id,
+      voter_name: name
+    });
+    if (ins.error) {
+      console.error('[SB] insert vote', ins.error);
+      alert(ins.error.message || 'No se pudo votar');
+      return;
+    }
+
+    // Ir a resultados
+    location.hash = '#/res/' + planId;
+    await renderResSB(); // mostramos el resultado ya con conteos
+    // mostrar vista
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+    $('#res')?.classList.add('on');
+  }
+
+  // Countdown helper
+  function startDeadlineTimer(deadlineISO){
+    const lbl = $('#rem');
+    if (!lbl) return;
+    const deadline = new Date(deadlineISO).getTime();
+    if (isNaN(deadline)) { lbl.textContent = '—'; return; }
+    // usa el tmr global si existe
+    try { if (window.tmr) clearInterval(window.tmr); } catch(_){}
+    window.tmr = setInterval(()=>{
+      const r = Math.max(0, deadline - Date.now());
+      const m = Math.floor(r/60000);
+      const s = Math.floor((r%60000)/1000);
+      lbl.textContent = m+'m '+s+'s';
+    }, 500);
+  }
+
+  async function renderVoteSB(){
+    const planId = (location.hash.split('/')[2] || '').trim();
+    if (!planId) { alert('No existe'); window.tab && window.tab('home'); return; }
+
+    let data;
+    try { data = await fetchPlanAndOptions(planId); }
+    catch(e){ console.error('[SB] renderVote fetch', e); alert('No existe'); window.tab && window.tab('home'); return; }
+
+    const { plan, options } = data;
+
+    // Header
+    $('#vt') && ($('#vt').textContent = 'Vota: ' + (plan?.title || 'Plan'));
+    $('#collab') && ($('#collab').style.display = (plan?.collab ? 'inline-block' : 'none'));
+    const vn = $('#vn'); if (vn) vn.value = (localStorage.getItem('pz_nombre') || '');
+
+    // Lista
+    const w = $('#vlist'); if (w) w.innerHTML = '';
+    const closed = !!(plan?.closed || plan?.cancelled);
+    const expired = plan?.deadline_ts ? (Date.now() >= new Date(plan.deadline_ts).getTime()) : false;
+    const isClosed = closed || expired;
+
+    (options || []).forEach(o=>{
+      const d = document.createElement('div');
+      d.className = 'opt';
+      d.innerHTML = `
+        <div class='row'>
+          <div style='flex:1'>${o.text}</div>
+          <button class='btn s p'>Votar</button>
+        </div>`;
+      const b = d.querySelector('button');
+      b.disabled = isClosed;
+      b.onclick = ()=> castVoteSB(plan.id, o.option_id);
+      w && w.appendChild(d);
+    });
+
+    // Enlace
+    const link = $('#link');
+    if (link) link.textContent = location.origin + location.pathname + '#/votar/' + planId;
+
+    // Timer
+    if (plan?.deadline_ts) startDeadlineTimer(plan.deadline_ts);
+  }
+
+  async function renderResSB(){
+    const planId = (location.hash.split('/')[2] || '').trim();
+    if (!planId) { alert('No existe'); window.tab && window.tab('home'); return; }
+
+    let data;
+    try { data = await fetchPlanAndOptions(planId); }
+    catch(e){ console.error('[SB] renderRes fetch', e); alert('No existe'); window.tab && window.tab('home'); return; }
+
+    const { plan, options } = data;
+
+    $('#rt') && ($('#rt').textContent = 'Resultado: ' + (plan?.title || 'Plan'));
+    $('#state') && ($('#state').textContent = (plan?.closed || plan?.cancelled || (plan?.deadline_ts && Date.now() >= new Date(plan.deadline_ts).getTime())) ? 'Cerrada' : 'Abierta');
+
+    const w = $('#rlist'); if (w) w.innerHTML = '';
+
+    let sum = 0, max = -1;
+    (options || []).forEach(o => { sum += (o.votes || 0); if ((o.votes||0) > max) max = (o.votes||0); });
+
+    (options || []).forEach(o=>{
+      const d = document.createElement('div');
+      d.className = 'opt';
+      d.innerHTML = `
+        <div class='row' style='justify-content:space-between'>
+          <div>${o.text}</div><b>${o.votes || 0}</b>
+        </div>`;
+      w && w.appendChild(d);
+    });
+
+    const leaders = (options || []).filter(o => (o.votes||0) === max);
+    const tieBox = $('#tie');
+    const tieOpts = $('#tieopts');
+    const winBox = $('#win');
+
+    if (leaders.length > 1 && (plan?.closed || (plan?.deadline_ts && Date.now() >= new Date(plan.deadline_ts).getTime()))){
+      if (tieBox) tieBox.style.display = 'block';
+      if (tieOpts) {
+        tieOpts.innerHTML = '';
+        leaders.forEach(o=>{
+          const d=document.createElement('div');
+          d.className='opt';
+          d.textContent=o.text;
+          tieOpts.appendChild(d);
+        });
+      }
+      if (winBox) winBox.innerHTML = '<small class="pill">Empate detectado</small>';
+      // guardamos ids de opciones empatadas por si usas tRand/tManual
+      window.tie = leaders.map(o=>o.option_id);
+    } else {
+      if (tieBox) tieBox.style.display = 'none';
+      const win = (options || []).find(o => (o.votes||0) === max) || null;
+      if (winBox) winBox.innerHTML = win
+        ? `<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`
+        : '<small class="pill">Aún no hay votos</small>';
+    }
+  }
+
+  // Activa los overrides SB (solo si hay cliente SB)
+  window.renderVote = renderVoteSB;
+  window.renderRes  = renderResSB;
+
+  // Si tienes botones "Ver resultados" que navegan y luego llaman renderRes,
+  // esto garantiza que usen la versión SB en cuanto exista SB.
+})();
+
 
   // Exporta funciones SB al global
   Object.assign(window, {
