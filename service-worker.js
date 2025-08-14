@@ -1,5 +1,5 @@
 // Service Worker tolerante (no falla si faltan iconos)
-const CACHE_NAME = 'planazoo-v1';
+const CACHE_NAME = 'planazoo-v2';
 const CORE = [
   './',
   './index.html',
