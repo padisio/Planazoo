@@ -39,12 +39,12 @@ const now = ()=>Date.now();
 const fmt = ts=>new Date(ts).toLocaleString();
 const toLocal = ts=>new Date(ts - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
 const icon=c=>({gastronomia:'🍽',musica:'🎵',cine:'🎬',deporte:'⚽',naturaleza:'🌿',cultura:'🎨',juegos:'🎮'}[c]||'✨');
+const useSB = ()=> !!window.SB && !!window.SB_VOTES;
 
-/* ====== Estado global seguro ====== */
+/* ====== Estado global ====== */
 let step = 1;
-// Garantiza que window.opts sea siempre un Array y reutilizable entre archivos
 if (!Array.isArray(window.opts)) window.opts = [];
-const opts = window.opts; // ¡NO reasignar! Usar mutación (length=0, push, splice)
+const opts = window.opts;
 
 /* ====== Tema ====== */
 (function(){
@@ -57,7 +57,7 @@ const opts = window.opts; // ¡NO reasignar! Usar mutación (length=0, push, spl
   if (s==='dark') document.documentElement.classList.add('dark');
 })();
 
-/* ====== Cuenta / Login (local) ====== */
+/* ====== Cuenta / Login local ====== */
 function openMenu(){ q('#amenu')?.classList.add('open'); }
 function closeMenu(){ q('#amenu')?.classList.remove('open'); }
 (function(){
@@ -145,7 +145,7 @@ function friends(){
 function saveFriends(a){ SVE(K.FRI,a); }
 
 function renderChips(sel=new Set()){
-  const w=q('#chips');
+  const w=q('#chips'); if (!w) return;
   w.innerHTML='';
   friends().forEach(u=>{
     const s=document.createElement('span');
@@ -169,7 +169,7 @@ function addFriendInput(){
 function manageFriends(){ q('#mf').style.display='flex'; renderMF(); }
 function closeMF(){ q('#mf').style.display='none'; }
 function renderMF(){
-  const w=q('#mfl'); w.innerHTML='';
+  const w=q('#mfl'); if (!w) return; w.innerHTML='';
   friends().forEach(u=>{
     const d=document.createElement('div');
     d.className='opt';
@@ -209,69 +209,37 @@ function setStep(n){
   q('#pb').disabled = (step===1);
   q('#pn').textContent = step===4 ? 'Finalizar' : 'Continuar →';
   if (step===4) renderSummary();
-
-// === Enlaces de UI (post-modularización) ===
-// NO-OP: usamos los onclick del HTML para evitar dobles disparos
-function wireUI(){ /* intencionadamente vacío */ }
-
+  wireUI();
 }
-
 function prevStep(){ if(step>1) setStep(step-1); }
-let __nextStepBusy = false;
+
 window.nextStep = async function () {
-  if (__nextStepBusy) return;         // evita llamadas dobles en el mismo tick
-  __nextStepBusy = true;
   try {
     if (typeof step === 'undefined') window.step = 1;
-
-    // Paso 1 -> 2
     if (step === 1) {
       if (typeof guardDetails === 'function' && !guardDetails()) return;
-
       const isLogged =
         (window.__pz_is_logged === true) ||
         (typeof user === 'function' && !!user());
-
-      if (!isLogged) { window.openLogin?.(); return; }
-
-      setStep(2);
-      return;
+      if (!isLogged && !useSB()) { window.openLogin?.(); return; }
+      setStep(2); return;
     }
-
-    // Paso 2 -> 3
-    if (step === 2) {
-      setStep(3);
-      return;
-    }
-
-    // Paso 3 -> 4 (requiere al menos 1 actividad)
+    if (step === 2) { setStep(3); return; }
     if (step === 3) {
       const hasOpts = Array.isArray(window.opts) && window.opts.length > 0;
       if (!hasOpts) { alert('Añade al menos 1 actividad'); return; }
-      setStep(4);
-      return;
+      setStep(4); return;
     }
-
-    // Paso 4 -> crear
     if (step === 4) {
-      const fn =
-        (typeof window.createShare === 'function' && window.createShare) ||
-        (typeof window.createShareLocal === 'function' && window.createShareLocal) ||
-        (typeof createShare === 'function' && createShare);
-
+      const fn = (window.createShare || window.createShareLocal || createShare);
       if (!fn) { alert('No encuentro la función para crear el plan.'); return; }
-      await fn();
-      return;
+      await fn(); return;
     }
   } catch (e) {
     console.error('[PZ] nextStep error:', e);
     alert(e?.message || 'No se pudo continuar. Revisa la consola.');
-  } finally {
-    // libera el candado tras el ciclo de eventos actual
-    setTimeout(() => { __nextStepBusy = false; }, 0);
   }
 };
-
 
 function guardDetails(){
   const title=q('#pt').value.trim();
@@ -280,7 +248,7 @@ function guardDetails(){
   return true;
 }
 function renderSummary(){
-  const sum=q('#sum'); sum.innerHTML='';
+  const sum=q('#sum'); if (!sum) return; sum.innerHTML='';
   const invited=(JSON.parse(q('#chips').dataset.sel||'[]')).map(id=>friends().find(f=>f.id===id));
   const card1=document.createElement('div');
   card1.className='opt';
@@ -307,7 +275,6 @@ function renderCrear(){
   q('#pc').value=p.city||'';
   const d=new Date(Date.now()+2*3600*1000); d.setMinutes(0,0,0);
   q('#pd').value=toLocal(d.getTime());
-  // Reset de opciones SIN reasignar el array (evita “Assignment to const”)
   opts.length = 0;
   ropts();
   q('#sugs').innerHTML='';
@@ -316,7 +283,7 @@ function renderCrear(){
   setStep(1);
 }
 function ropts(){
-  const w=q('#opts'); w.innerHTML='';
+  const w=q('#opts'); if (!w) return; w.innerHTML='';
   if(!Array.isArray(opts)) { window.opts=[]; }
   if(!opts.length){ w.innerHTML='<small class="pill">No hay actividades aún</small>'; return; }
   opts.forEach((o,i)=>{
@@ -361,7 +328,7 @@ function addManual(){
 function ol(){return parseInt(localStorage.getItem('pz_limit_options')||'5',10)}
 function al(){return parseInt(localStorage.getItem('pz_limit_active')||'3',10)}
 
-// Versión local (localStorage). Si Supabase la sobrescribe, se usará la otra.
+/* ====== createShare local (fallback) ====== */
 function createShare(){
   if(!guardDetails()) return;
   const title=q('#pt').value.trim();
@@ -389,9 +356,133 @@ function createShare(){
   q('#votar')?.classList.add('on');
 }
 
-/* ====== Votar / Resultado / Compartir ====== */
+/* ====== Votar (SB elegante) ====== */
+async function renderVoteSB(){
+  const id = location.hash.split('/')[2];
+  if (!id) { alert('No existe'); tab('home'); return; }
+
+  // Plan (deadline/closed)
+  const planRes = await window.SB_VOTES.fetchPlan(id);
+  const p = planRes.data;
+  if (!p) { alert('No existe'); tab('home'); return; }
+
+  q('#vt').textContent = 'Vota: ' + (p.title || 'Plan');
+  q('#collab').style.display = 'inline-block';
+  q('#vn').value = ''; // no usamos nombre con SB
+
+  const listRes = await window.SB_VOTES.fetchOptionsWithCounts(id);
+  const rows = listRes.data || [];
+
+  let myOpt = null;
+  try { myOpt = await window.SB_VOTES.getMyVote(id); } catch(_){}
+
+  const w = q('#vlist'); w.innerHTML='';
+  rows.forEach(r=>{
+    const el = document.createElement('div');
+    el.className = 'vote-card' + (myOpt && myOpt===r.option_id ? ' selected' : '');
+    el.dataset.option = r.option_id;
+    el.innerHTML = `
+      <div class="check">✓</div>
+      <div style="flex:1">
+        <div class="vote-title">${r.text}</div>
+        ${typeof r.votes==='number' ? `<div class="vote-meta">Votos: ${r.votes}</div>` : ``}
+      </div>
+    `;
+    el.addEventListener('click', async ()=>{
+      try{
+        await window.SB_VOTES.castVote(id, r.option_id);
+        // refrescar selección y contadores
+        const [me, latest] = await Promise.all([
+          window.SB_VOTES.getMyVote(id),
+          window.SB_VOTES.fetchOptionsWithCounts(id),
+        ]);
+        myOpt = me;
+        // re-render rápido
+        const data = latest.data || [];
+        w.querySelectorAll('.vote-card').forEach(card=>{
+          const isMine = (card.dataset.option === String(myOpt));
+          card.classList.toggle('selected', isMine);
+        });
+        // actualizar contadores
+        data.forEach(dr=>{
+          const card = w.querySelector(`.vote-card[data-option="${dr.option_id}"]`);
+          if(card){
+            const meta = card.querySelector('.vote-meta');
+            if (meta) meta.textContent = 'Votos: '+(dr.votes ?? 0);
+          }
+        });
+      }catch(err){
+        console.error('[vote] error', err);
+        alert(err?.message || 'No se pudo registrar el voto');
+      }
+    });
+    w.appendChild(el);
+  });
+
+  // contador de cierre
+  const closed = !!p.closed;
+  function tick(){
+    const dl = new Date(p.deadline_ts).getTime();
+    const r = Math.max(0, dl - Date.now());
+    q('#rem').textContent = (closed ? 'Cerrada' : (Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s'));
+  }
+  tick();
+  clearInterval(window.__pz_timer);
+  window.__pz_timer = setInterval(tick, 500);
+}
+
+/* ====== Resultado (SB) ====== */
+async function renderResSB(){
+  const id = location.hash.split('/')[2];
+  if (!id) { alert('No existe'); tab('home'); return; }
+
+  const planRes = await window.SB_VOTES.fetchPlan(id);
+  const p = planRes.data;
+  if (!p) { alert('No existe'); tab('home'); return; }
+
+  q('#rt').textContent = 'Resultado: ' + (p.title || 'Plan');
+  q('#state').textContent = (p.closed ? 'Cerrada' : 'Abierta');
+
+  const listRes = await window.SB_VOTES.fetchOptionsWithCounts(id);
+  const rows = listRes.data || [];
+  let max = -1, win = null, sum = 0;
+  rows.forEach(r => { const v = r.votes||0; sum += v; if (v>max){max=v; win=r;} });
+
+  const w=q('#rlist'); w.innerHTML='';
+  rows.forEach(r=>{
+    const d=document.createElement('div');
+    d.className='opt'+(win && win.option_id===r.option_id ? ' winner':'');
+    const pct = sum ? Math.round( ( (r.votes||0) / sum ) * 100 ) : 0;
+    d.innerHTML = `
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div>${r.text}</div>
+        <b>${r.votes||0}</b>
+      </div>
+      <div class="vbar" style="margin-top:8px"><span style="width:${pct}%"></span></div>
+    `;
+    w.appendChild(d);
+  });
+
+  if (win){
+    q('#win').innerHTML = `<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`;
+    if (p.closed || new Date(p.deadline_ts).getTime() <= Date.now()){
+      // confeti una sola vez por plan
+      const flag = 'pz_fx_'+id;
+      if (!localStorage.getItem(flag)){
+        burstConfetti(180);
+        localStorage.setItem(flag, '1');
+      }
+    }
+  } else {
+    q('#win').innerHTML = '<small class="pill">Aún no hay votos</small>';
+  }
+}
+
+/* ====== Votar / Resultado / Compartir (local) ====== */
 let tmr=null, tie=[];
 function renderVote(){
+  if (useSB()) return renderVoteSB();
+
   const id=location.hash.split('/')[2];
   const polls=U(K.POLLS,{});
   const p=polls[id];
@@ -431,6 +522,7 @@ function renderVote(){
   },500);
 }
 function contrib(){
+  if (useSB()) { alert('Añadir opciones desde app (SB) no implementado aún.'); return; }
   const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
   if(!p || p.closed || now()>=p.deadline){ alert('Cerrada'); return; }
   const t=prompt('Añade tu opción'); if(!t) return;
@@ -441,6 +533,8 @@ function contrib(){
 function goRes(){ renderRes(); qq('.view').forEach(v=>v.classList.remove('on')); q('#res').classList.add('on'); }
 
 function renderRes(){
+  if (useSB()) return renderResSB();
+
   const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
   if(!p){ alert('No existe'); tab('home'); return; }
   q('#rt').textContent='Resultado: '+p.title;
@@ -450,24 +544,28 @@ function renderRes(){
   p.options.forEach(o=>{ sum+=(o.votes||0); if((o.votes||0)>max){ max=o.votes||0; win=o; }});
   p.options.forEach(o=>{
     const d=document.createElement('div');
-    d.className='opt';
-    d.innerHTML=`<div class='row' style='justify-content:space-between'><div>${o.text}</div><b>${o.votes||0}</b></div>`;
+    d.className='opt'+(win && win.id===o.id ? ' winner':'');
+    const pct = sum ? Math.round(((o.votes||0)/sum)*100) : 0;
+    d.innerHTML=`<div class='row' style='justify-content:space-between;align-items:center'>
+      <div>${o.text}</div><b>${o.votes||0}</b></div>
+      <div class="vbar" style="margin-top:8px"><span style="width:${pct}%"></span></div>`;
     w.appendChild(d);
   });
-  const leaders=p.options.filter(o=>(o.votes||0)===max);
-  if(leaders.length>1 && (p.closed||now()>=p.deadline)){
-    q('#tie').style.display='block';
-    const tw=q('#tieopts'); tw.innerHTML='';
-    leaders.forEach(o=>{ const d=document.createElement('div'); d.className='opt'; d.textContent=o.text; tw.appendChild(d); });
-    tie=leaders.map(o=>o.id);
-    q('#win').innerHTML='<small class="pill">Empate detectado</small>';
+  if (win){
+    q('#win').innerHTML=`<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`;
+    burstConfetti(150);
   } else {
-    q('#tie').style.display='none';
-    q('#win').innerHTML = win ? `<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>` : '<small class="pill">Aún no hay votos</small>';
+    q('#win').innerHTML='<small class="pill">Aún no hay votos</small>';
   }
 }
-function closeNow(){
-  const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id]; if(!p) return;
+async function closeNow(){
+  const id=location.hash.split('/')[2];
+  if (useSB()){
+    await window.SB_VOTES.closePlan(id);
+    await renderResSB();
+    return;
+  }
+  const polls=U(K.POLLS,{}), p=polls[id]; if(!p) return;
   p.closed=true; polls[id]=p; SVE(K.POLLS,polls); renderRes();
 }
 function tRand(){
@@ -507,7 +605,7 @@ function publishPlan(id){
 /* ====== Historial / valorar ====== */
 let rateId=null, stars=0;
 function renderHist(){
-  const polls=U(K.POLLS,{}), ratings=U(K.RATE,{}), w=q('#hlist'); w.innerHTML='';
+  const polls=U(K.POLLS,{}), ratings=U(K.RATE,{}), w=q('#hlist'); if (!w) return; w.innerHTML='';
   const arr=Object.values(polls).sort((a,b)=>b.when-a.when);
   if(!arr.length){ w.innerHTML='<div class="pill">No hay planes</div>'; return; }
   arr.forEach(p=>{
@@ -544,7 +642,7 @@ function cancelPlan(id){
 function openMR(id){ rateId=id; stars=0; rst(); q('#rc').value=''; q('#mr').style.display='flex'; }
 function closeMR(){ q('#mr').style.display='none'; rateId=null; }
 function rst(){
-  const w=q('#rst'); w.innerHTML='';
+  const w=q('#rst'); if (!w) return; w.innerHTML='';
   for(let i=1;i<=5;i++){
     const s=document.createElement('span');
     s.className='star'+(i<=stars?' on':'');
@@ -573,7 +671,7 @@ function addFavText(t){
   sFav([...gFav(),t]); renderFavs(); rfavpick();
 }
 function renderFavs(){
-  const w=q('#fv'); w.innerHTML='';
+  const w=q('#fv'); if (!w) return; w.innerHTML='';
   const a=gFav();
   if(!a.length){ w.innerHTML='<div class="pill">Sin favoritos</div>'; return; }
   a.forEach(t=>{
@@ -590,7 +688,7 @@ function renderFavs(){
   });
 }
 function rfavpick(){
-  const w=q('#favpick'); w.innerHTML='';
+  const w=q('#favpick'); if (!w) return; w.innerHTML='';
   const a=gFav();
   if(!a.length){ w.innerHTML='<div class="pill">Sin favoritos</div>'; return; }
   a.forEach(t=>{
@@ -606,7 +704,7 @@ function rfavpick(){
 function gComm(){ return U(K.COMM,COMM_DEF); }
 function sComm(a){ SVE(K.COMM,a); }
 function renderComm(){
-  const w=q('#clist'); w.innerHTML='';
+  const w=q('#clist'); if (!w) return; w.innerHTML='';
   gComm().sort((a,b)=>b.rating-a.rating).forEach(i=>{
     const d=document.createElement('div'); d.className='opt';
     d.innerHTML=`<b>${icon(i.cat)} ${i.title}</b><br>
@@ -624,7 +722,7 @@ function renderComm(){
   });
 }
 function renderHomeC(){
-  const w=q('#homec'); w.innerHTML='';
+  const w=q('#homec'); if (!w) return; w.innerHTML='';
   gComm().sort((a,b)=>b.rating-a.rating).slice(0,3).forEach(i=>{
     const d=document.createElement('div'); d.className='opt';
     d.innerHTML=`<div class='row' style='justify-content:space-between'>
@@ -637,7 +735,7 @@ function renderHomeC(){
 
 /* ====== Stats ====== */
 function renderStats(){
-  const st=U(K.STATS,{cats:{},tod:{},count:0}), w=q('#sw'); w.innerHTML='';
+  const st=U(K.STATS,{cats:{},tod:{},count:0}), w=q('#sw'); if (!w) return; w.innerHTML='';
   const favCat=Object.entries(st.cats).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';
   const favTod=Object.entries(st.tod).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';
   [['Categoría top',favCat],['Franja favorita',favTod],['Votos totales',st.count]].forEach(([k,v])=>{
@@ -654,9 +752,9 @@ function track(o){
   st.count++;
   SVE(K.STATS,st);
 }
-// === Enlaces de UI (post-modularización) ===
+
+/* ====== UI wiring ====== */
 function wireUI(){
-  // Botones del wizard
   const nextBtn = q('#pn');
   if (nextBtn && !nextBtn.dataset.bound) {
     nextBtn.addEventListener('click', nextStep);
@@ -669,21 +767,34 @@ function wireUI(){
     prevBtn.dataset.bound = '1';
   }
 
-  // Paso 4: "Crear y compartir" y "Vista previa de enlace"
   const s4 = q('#s4');
   if (s4) {
-    // Botón principal (morado) = Crear y compartir
     const shareBtn = s4.querySelector('button.btn.p');
     if (shareBtn && !shareBtn.dataset.bound) {
       shareBtn.addEventListener('click', () => (window.createShare || createShare)());
       shareBtn.dataset.bound = '1';
     }
-    // Botón secundario = Vista previa de enlace
     const previewBtn = s4.querySelector('button.btn:not(.p)');
     if (previewBtn && !previewBtn.dataset.bound) {
       previewBtn.addEventListener('click', sharePreview);
       previewBtn.dataset.bound = '1';
     }
+  }
+}
+
+/* ====== Confetti ====== */
+function burstConfetti(count=120){
+  const colors = ['#6C4CF5','#7D5CF8','#FFC400','#3dd68c','#ff7aa2','#65d4ff'];
+  for (let i=0;i<count;i++){
+    const d = document.createElement('div');
+    d.className='confetti-piece';
+    d.style.left = (Math.random()*100)+'vw';
+    d.style.background = colors[i % colors.length];
+    d.style.animationDuration = (1.6 + Math.random()*1.4)+'s';
+    d.style.animationDelay = (Math.random()*0.2)+'s';
+    d.style.transform = `rotate(${Math.random()*360}deg)`;
+    document.body.appendChild(d);
+    setTimeout(()=>{ d.remove(); }, 3500);
   }
 }
 
@@ -694,8 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireUI();
 });
 
-
-/* === Modal de sugerencias: mover #sugs dentro del modal (compat) === */
+/* === Modal de sugerencias (compat) === */
 let _sugs_parent=null, _sugs_next=null;
 function _ensureSugAnchors(){
   const node=document.getElementById('sugs');
@@ -704,7 +814,7 @@ function _ensureSugAnchors(){
     _sugs_next=node.nextSibling;
   }
 }
-function openSug(){ // compat con versiones antiguas
+function openSug(){
   _ensureSugAnchors();
   const node=document.getElementById('sugs');
   const wrap=document.getElementById('sugwrap');
@@ -715,7 +825,7 @@ function openSug(){ // compat con versiones antiguas
   const m=document.getElementById('msug');
   if(m) m.style.display='flex';
 }
-function closeMSug(){ // versión básica; enhancers.js puede sobreescribirla
+function closeMSug(){
   const node=document.getElementById('sugs');
   if(node && _sugs_parent){
     if(_sugs_next){ _sugs_parent.insertBefore(node,_sugs_next); }
@@ -728,59 +838,39 @@ document.addEventListener('click',e=>{
   const m=document.getElementById('msug');
   if(m && m.style.display==='flex' && e.target===m){ closeMSug(); }
 });
-// Si no existe openMSug (por si enhancers.js no cargó aún), proveemos uno simple
-if(!window.openMSug){
-  window.openMSug = function(){
-    openSug();
-  };
-}
+if(!window.openMSug){ window.openMSug = function(){ openSug(); }; }
 
-/* ====== Exportar funciones al global (necesarias para onclick del HTML) ====== */
+/* ====== Export global ====== */
 Object.assign(window, {
-  // navegación / prefs
   tab, openPrefs, savePrefs,
-  // cuenta
   openLogin, closeLogin, doLogin, demoLogin, logout,
-  // amigos
   addFriendInput, manageFriends, closeMF, addFriendModal,
-  // crear
   prevStep, nextStep, addManual, sharePreview,
-  // createShare: deja pasar override de Supabase si existe
   createShare: window.createShare || createShare,
-  // votar / resultado
   contrib, goRes, closeNow, tRand, tManual, share, publish,
   openVote, delPlan, cancelPlan,
-  // valorar
   openMR, closeMR, saveRate,
-  // favs
   addFav,
-  // comunidad/home
   renderComm, renderHomeC,
-  // stats
   renderStats,
-  // sugerencias modal
   openMSug: window.openMSug || openSug,
   closeMSug,
   openSug,
-  // estado
-  opts, // por si otro archivo necesita acceder
+  opts
 });
-/* === Planazoo: fallback de createShare (sin delegación de clicks) === */
+
+/* === Arnés de eventos === */
 (() => {
-  // Asegura que la función local quede accesible por si Supabase no está
-  if (typeof window.createShareLocal !== 'function' && typeof createShare === 'function') {
-    window.createShareLocal = createShare;
+  window.__PZ_DEBUG = true;
+  function delegateUI() {
+    document.addEventListener('click',(e)=>{
+      const $ = (sel)=> e.target.closest && e.target.closest(sel);
+      if ($('#pn')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click #pn step=', step); nextStep(); return; }
+      if ($('#pb')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click #pb'); prevStep(); return; }
+      if ($('#s4 .btn.p')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click Crear y compartir'); (window.createShare || createShare)(); return; }
+      if ($('#s4 .btn:not(.p)')){ e.preventDefault(); if (window.__PZ_DEBUG) console.debug('[PZ] click Vista previa'); sharePreview(); return; }
+    }, { capture:true });
   }
-})();
-/* === SB-aware overrides (delegan a Supabase si está disponible) === */
-(function(){
-  if (window.SB && typeof window.renderVoteSB === 'function') {
-    window.renderVote = (planId) => window.renderVoteSB(planId);
-  }
-  if (window.SB && typeof window.renderResSB === 'function') {
-    window.renderRes = () => window.renderResSB();
-  }
-  if (window.SB && typeof window.contribSB === 'function') {
-    window.contrib = () => window.contribSB();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', delegateUI, { once:true });
+  else delegateUI();
 })();
