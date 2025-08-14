@@ -888,4 +888,3 @@ Object.assign(window, {
     };
   }
 })();
-
