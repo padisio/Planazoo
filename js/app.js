@@ -568,13 +568,20 @@ function renderRes(){
 }
 async function closeNow(){
   const id=location.hash.split('/')[2];
-  if (useSB()){
-    await window.SB_VOTES.closePlan(id);
-    await renderResSB();
-    return;
-  }
-  const polls=U(K.POLLS,{}), p=polls[id]; if(!p) return;
-  p.closed=true; polls[id]=p; SVE(K.POLLS,polls); renderRes();
+  const polls=U(K.POLLS,{});
+  const p=polls[id];
+  if(!p) return;
+
+  p.closed=true;
+  polls[id]=p;
+  SVE(K.POLLS,polls);
+
+  // refresca resultado en la vista (por si vuelves a ella)
+  try { renderRes(); } catch(_) {}
+
+  // muestra modal ganador con CTA compartir
+  try { showWinnerModal(p); } catch(e){ console.warn('[WinnerModal]', e); }
+  
 }
 function tRand(){
   const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
@@ -866,6 +873,133 @@ Object.assign(window, {
   openSug,
   opts
 });
+/* === Winner Modal + Confetti (overlay) === */
+/* === Winner Modal + Confetti + Share === */
+function ensureWinnerModal(){
+  let m = document.getElementById('mw');
+  if (!m){
+    m = document.createElement('div');
+    m.id = 'mw';
+    m.className = 'modal';
+    m.innerHTML = `
+      <div class="sheet" role="dialog" aria-modal="true" style="max-width:520px">
+        <div class="row">
+          <h3 id="mw-title">Resultado</h3>
+          <div style="flex:1"></div>
+          <button class="btn s" id="mw-close">Cerrar</button>
+        </div>
+        <div id="mw-body" class="col" style="gap:12px; margin-top:6px"></div>
+        <div class="row" style="margin-top:12px; gap:8px">
+          <button class="btn" id="mw-share">Compartir</button>
+          <div style="flex:1"></div>
+          <button class="btn p" id="mw-exit">Volver al inicio</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+
+    // cerrar al pulsar fuera
+    m.addEventListener('click', e=>{ if(e.target===m) hideWinnerModal(); });
+    // botones hoja
+    m.querySelector('#mw-close').onclick = hideWinnerModal;
+    m.querySelector('#mw-exit').onclick  = ()=>{ hideWinnerModal(); tab('home'); };
+    m.querySelector('#mw-share').onclick = shareWinnerFromModal;
+  }
+  return m;
+}
+function hideWinnerModal(){
+  const m=document.getElementById('mw');
+  if(m){ m.style.display='none'; document.body.classList.remove('modal-open'); }
+}
+
+/* Comparte el ganador leyendo datos del modal */
+function shareWinnerFromModal(){
+  const m=document.getElementById('mw');
+  if(!m) return;
+  const planId = m.dataset.planId || '';
+  const text   = m.dataset.shareText || '¡Mira el plan ganador en Planazoo!';
+  const url    = location.origin + location.pathname + '#/res/' + planId;
+
+  if (navigator.share){
+    navigator.share({ title:'Planazoo', text, url }).catch(()=>{});
+  } else {
+    const msg = `${text} ${url}`;
+    navigator.clipboard?.writeText(msg).then(()=> alert('Enlace copiado'));
+    // plus WhatsApp por comodidad
+    window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+  }
+}
+
+/* Pinta el modal y prepara el texto para compartir; dispara confeti si hay ganador único */
+function showWinnerModal(plan){
+  const m = ensureWinnerModal();
+  const body = m.querySelector('#mw-body');
+  const titleEl = m.querySelector('#mw-title');
+
+  const opts = Array.isArray(plan?.options) ? plan.options : [];
+  let max = -1, winners=[];
+  opts.forEach(o=>{
+    const v=o.votes||0;
+    if (v>max){ max=v; winners=[o]; }
+    else if (v===max){ winners.push(o); }
+  });
+  const total = opts.reduce((s,o)=>s+(o.votes||0),0);
+
+  // metadata para compartir
+  m.dataset.planId = plan?.id || '';
+  if (!winners.length){
+    titleEl.textContent = 'Resultado';
+    body.innerHTML = `<div class="opt"><small class="pill">Aún no hay votos</small></div>`;
+    m.dataset.shareText = 'Consulta el resultado del plan en Planazoo';
+  } else if (winners.length===1){
+    titleEl.textContent = '🎉 Ganador';
+    body.innerHTML = `
+      <div class="opt" style="text-align:center">
+        <div class="vote-card winner" style="margin:8px auto">
+          <div class="vote-title">${winners[0].text}</div>
+        </div>
+        <small class="pill">Total votos: ${total}</small>
+      </div>`;
+    m.dataset.shareText = `Ganó: ${winners[0].text}.`;
+    triggerConfetti();
+  } else {
+    titleEl.textContent = '⚖️ Empate';
+    body.innerHTML = `
+      <div class="opt">
+        <b>Empate detectado</b>
+        <ul style="margin-top:6px">${winners.map(w=>`<li>${w.text}</li>`).join('')}</ul>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" onclick="tRand()">Desempate aleatorio</button>
+          <button class="btn" onclick="tManual()">Elegir manual</button>
+        </div>
+      </div>`;
+    m.dataset.shareText = `Hay empate entre: ${winners.map(w=>w.text).join(' · ')}.`;
+  }
+
+  m.style.display='flex';
+  document.body.classList.add('modal-open');
+}
+
+/* Confeti (usa tu CSS existente #fx-confetti / .confetti-piece / @keyframes confetti-fall) */
+function triggerConfetti(){
+  let wrap = document.getElementById('fx-confetti');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.id = 'fx-confetti';
+    document.body.appendChild(wrap);
+  }
+  wrap.innerHTML = '';
+  const N = 80;
+  for (let i=0;i<N;i++){
+    const s = document.createElement('span');
+    s.className = 'confetti-piece';
+    s.style.left = (Math.random()*100)+'%';
+    s.style.animationDelay = (Math.random()*0.8)+'s';
+    s.style.animationDuration = (1.8 + Math.random()*1.2)+'s';
+    wrap.appendChild(s);
+  }
+  setTimeout(()=>{ wrap.innerHTML=''; }, 2400);
+}
+
 
 /* === Planazoo: arnés mínimo (sin capturar clicks globales) === */
 (() => {
