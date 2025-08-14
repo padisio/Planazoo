@@ -20,7 +20,6 @@
   // Pequeñas utilidades
   const $  = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const now = () => Date.now();
   const toISO = (v) => (v ? new Date(v).toISOString() : new Date().toISOString());
 
   // Helpers localStorage (para mantener compat con UI legacy)
@@ -236,6 +235,7 @@
     }, 500);
   }
 
+  // >>>>>>>>>> CAMBIO CLAVE: UPSERT EN LUGAR DE INSERT <<<<<<<<<<
   async function castVoteSB(planId, optionId) {
     try {
       const name = $("#vn")?.value?.trim();
@@ -245,16 +245,21 @@
       const { data: userData } = await window.SB.auth.getUser();
       if (!userData?.user) { window.openLogin && window.openLogin(); return; }
 
-      // Insertar voto (sin triggers: enviamos plan_id y option_id)
-      const ins = await window.SB.from("votes").insert({
+      // Upsert: un voto por (plan_id, user_id). Si ya existe, actualiza option_id.
+      const payload = [{
         plan_id: planId,
         option_id: optionId,
         user_id: userData.user.id,
         voter_name: name
-      });
-      if (ins.error) {
-        console.error("[SB] insert vote", ins.error);
-        alert(ins.error.message || "No se pudo votar");
+      }];
+
+      const res = await window.SB
+        .from("votes")
+        .upsert(payload, { onConflict: "plan_id,user_id" });
+
+      if (res.error) {
+        console.error("[SB] upsert vote", res.error);
+        alert(res.error.message || "No se pudo votar");
         return;
       }
 
