@@ -161,12 +161,14 @@
       return await window.SB.from('plans').select('id,title,deadline_ts,closed').eq('id', plan_id).single();
     },
     async fetchOptionsWithCounts(plan_id){
-      // Vista que expone option_id, plan_id, text, votes (y otros campos)
-      return await window.SB
-        .from('plan_options_with_counts')
-        .select('*')
-        .eq('plan_id', plan_id)
-        .order('created_at', { ascending: true });
+  // La vista no tiene created_at en tu caso. No ordenes aquí.
+     const { data, error } = await window.SB
+      .from('plan_options_with_counts')
+      .select('option_id,plan_id,text,votes') // pide solo lo que usas
+      .eq('plan_id', plan_id);
+
+     if (error) throw error;
+     return { data, error: null };
     },
     async getMyVote(plan_id){
       const u = await requireLogin();

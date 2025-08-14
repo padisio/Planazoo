@@ -371,7 +371,8 @@ async function renderVoteSB(){
   q('#vn').value = ''; // no usamos nombre con SB
 
   const listRes = await window.SB_VOTES.fetchOptionsWithCounts(id);
-  const rows = listRes.data || [];
+  // Ordena en cliente por texto (o quita esta línea si prefieres sin ordenar)
+  const rows = (listRes.data || []).slice().sort((a,b)=> String(a.text).localeCompare(String(b.text)));
 
   let myOpt = null;
   try { myOpt = await window.SB_VOTES.getMyVote(id); } catch(_){}
