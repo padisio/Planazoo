@@ -363,81 +363,90 @@ function createShare(){
   q('#votar')?.classList.add('on');
 }
 
-/* ====== Votar (SB elegante) ====== */
+// === VOTAR (Supabase) ===
 async function renderVoteSB(){
   const id = location.hash.split('/')[2];
-  if (!id) { alert('No existe'); tab('home'); return; }
+  if(!id){ alert('No existe'); tab('home'); return; }
 
-  // Plan (deadline/closed)
-  const planRes = await window.SB_VOTES.fetchPlan(id);
-  const p = planRes.data;
-  if (!p) { alert('No existe'); tab('home'); return; }
+  // Plan + datos básicos
+  const plan = await window.SB_VOTES.getPlan(id);
+  if(!plan){ alert('No existe'); tab('home'); return; }
 
-  q('#vt').textContent = 'Vota: ' + (p.title || 'Plan');
-  q('#collab').style.display = 'inline-block';
-  q('#vn').value = ''; // no usamos nombre con SB
+  q('#vt').textContent = 'Vota: ' + (plan.title || 'Plan');
+  q('#collab').style.display = plan.collab ? 'inline-block' : 'none';
+  // nombre: toma perfil, usuario local o vacío (no forzamos input manual)
+  q('#vn').value = (window.__pz_profile?.display_name || (window.user && window.user()?.name) || '') || '';
+  q('#link').textContent = location.origin + location.pathname + '#/votar/' + id;
 
-  const listRes = await window.SB_VOTES.fetchOptionsWithCounts(id);
-  // Ordena en cliente por texto (o quita esta línea si prefieres sin ordenar)
-  const rows = (listRes.data || []).slice().sort((a,b)=> String(a.text).localeCompare(String(b.text)));
+  // Lista de opciones con contador
+  const rows = await window.SB_VOTES.fetchOptionsWithCounts(id);
 
-  let myOpt = null;
-  try { myOpt = await window.SB_VOTES.getMyVote(id); } catch(_){}
+  const w = q('#vlist');
+  w.innerHTML = '';
 
-  const w = q('#vlist'); w.innerHTML='';
-  rows.forEach(r=>{
+  const closed = !!plan.closed || (Date.now() >= new Date(plan.deadline_ts).getTime());
+
+  // Mi voto actual (option_id o null)
+  let myOpt = await window.SB_VOTES.getMyVote(id);
+
+  rows.forEach((r)=>{
+    // ⬅️ FIX: usa el id correcto venga como option_id o como id
+    const optId = (r.option_id ?? r.id);
     const el = document.createElement('div');
-    el.className = 'vote-card' + (myOpt && myOpt===r.option_id ? ' selected' : '');
-    el.dataset.option = r.option_id;
+    el.className = 'vote-card' + (myOpt && myOpt === optId ? ' selected' : '');
+    el.dataset.option = String(optId);
+
     el.innerHTML = `
       <div class="check">✓</div>
       <div style="flex:1">
         <div class="vote-title">${r.text}</div>
-        ${typeof r.votes==='number' ? `<div class="vote-meta">Votos: ${r.votes}</div>` : ``}
+        ${typeof r.votes === 'number' ? `<div class="vote-meta">Votos: ${r.votes}</div>` : ``}
       </div>
     `;
+
     el.addEventListener('click', async ()=>{
+      if (closed) return;
       try{
-        await window.SB_VOTES.castVote(id, r.option_id);
-        // refrescar selección y contadores
+        await window.SB_VOTES.castVote(id, optId);
+
+        // refresca mi voto + contadores sin re-render completo
         const [me, latest] = await Promise.all([
           window.SB_VOTES.getMyVote(id),
           window.SB_VOTES.fetchOptionsWithCounts(id),
         ]);
         myOpt = me;
-        // re-render rápido
-        const data = latest.data || [];
-        w.querySelectorAll('.vote-card').forEach(card=>{
-          const isMine = (card.dataset.option === String(myOpt));
-          card.classList.toggle('selected', isMine);
-        });
-        // actualizar contadores
-        data.forEach(dr=>{
-          const card = w.querySelector(`.vote-card[data-option="${dr.option_id}"]`);
-          if(card){
-            const meta = card.querySelector('.vote-meta');
-            if (meta) meta.textContent = 'Votos: '+(dr.votes ?? 0);
+
+        latest.forEach(row=>{
+          const oid = (row.option_id ?? row.id);
+          const card = w.querySelector(`.vote-card[data-option="${oid}"]`);
+          if (!card) return;
+          const meta = card.querySelector('.vote-meta');
+          if (meta && typeof row.votes === 'number') {
+            meta.textContent = `Votos: ${row.votes}`;
           }
+          card.classList.toggle('selected', myOpt === oid);
         });
       }catch(err){
         console.error('[vote] error', err);
         alert(err?.message || 'No se pudo registrar el voto');
       }
     });
+
     w.appendChild(el);
   });
 
-  // contador de cierre
-  const closed = !!p.closed;
-  function tick(){
-    const dl = new Date(p.deadline_ts).getTime();
-    const r = Math.max(0, dl - Date.now());
-    q('#rem').textContent = (closed ? 'Cerrada' : (Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s'));
-  }
-  tick();
+  // temporizador
   clearInterval(window.__pz_timer);
-  window.__pz_timer = setInterval(tick, 500);
+  window.__pz_timer = setInterval(()=>{
+    const r = Math.max(0, new Date(plan.deadline_ts).getTime() - Date.now());
+    q('#rem').textContent = (plan.closed ? 'Cerrada' : Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s');
+  }, 500);
+
+  // Botón cerrar deshabilitado si ya está cerrada
+  const closeBtn = q('#votar .btn[data-action="close"]') || q('#res .btn[data-action="close"]');
+  if (closeBtn) closeBtn.disabled = closed;
 }
+
 
 /* ====== Resultado (SB) ====== */
 async function renderResSB(){
