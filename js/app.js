@@ -806,9 +806,8 @@ async function hideWinnerInlineIfClosed(planId){
 async function closeNow(){
   const id = (location.hash.split('/')[2] || '').trim();
   if (!id) return;
-
-// === Helpers SB/local ===
-function useSB(){ return !!window.SB; }
+  // === Helpers SB/local ===
+  // (Usamos la const useSB() global declarada al inicio)
 
   // === Ruta Supabase ===
   if (useSB()){
@@ -852,7 +851,7 @@ function useSB(){ return !!window.SB; }
 }
 
 // === SB helpers / realtime ===
-function useSB(){ return !!(window.SB && window.SB_VOTES); }
+
 function currentPlanId(){ return (location.hash.split('/')[2] || '').trim(); }
 
 let __votesChannel = null;
