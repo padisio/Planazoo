@@ -538,37 +538,116 @@ function contrib(){
   polls[id]=p; SVE(K.POLLS,polls);
   renderVote();
 }
-function goRes(){ renderRes(); qq('.view').forEach(v=>v.classList.remove('on')); q('#res').classList.add('on'); }
+function goRes(){
+  renderRes();
+  qq('.view').forEach(v=>v.classList.remove('on'));
+  q('#res').classList.add('on');
+  const id = (location.hash.split('/')[2] || '').trim();
+  setCloseBtnDisabled(id); // asegura estado del botón
+}
 
 function renderRes(){
-  if (useSB()) return renderResSB();
+  const id = (location.hash.split('/')[2] || '').trim();
+  if(!id){ alert('No existe'); tab('home'); return; }
 
-  const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
-  if(!p){ alert('No existe'); tab('home'); return; }
-  q('#rt').textContent='Resultado: '+p.title;
-  q('#state').textContent=(p.closed||now()>=p.deadline)?'Cerrada':'Abierta';
-  const w=q('#rlist'); w.innerHTML='';
-  let sum=0,max=-1,win=null;
-  p.options.forEach(o=>{ sum+=(o.votes||0); if((o.votes||0)>max){ max=o.votes||0; win=o; }});
-  p.options.forEach(o=>{
-    const d=document.createElement('div');
-    d.className='opt'+(win && win.id===o.id ? ' winner':'');
-    const pct = sum ? Math.round(((o.votes||0)/sum)*100) : 0;
-    d.innerHTML=`<div class='row' style='justify-content:space-between;align-items:center'>
-      <div>${o.text}</div><b>${o.votes||0}</b></div>
-      <div class="vbar" style="margin-top:8px"><span style="width:${pct}%"></span></div>`;
-    w.appendChild(d);
-  });
-  if (win){
-    q('#win').innerHTML=`<h3>🎉 Ganador: ${win.text}</h3><small class='pill'>Total votos: ${sum}</small>`;
-    burstConfetti(150);
-  } else {
-    q('#win').innerHTML='<small class="pill">Aún no hay votos</small>';
+  // --- LOCAL (fallback) para construir la lista y contadores como ya hacías ---
+  const polls = U(K.POLLS,{});
+  const p = polls[id];
+
+  // Cabecera (estado)
+  q('#rt').textContent = 'Resultado: ' + (p?.title || '(plan)');
+  const isClosedLocal = p ? (p.closed || now() >= p.deadline || p.cancelled) : false;
+  q('#state').textContent = isClosedLocal ? 'Cerrada' : 'Abierta';
+
+  // Lista simple (si existe en local)
+  const w = q('#rlist'); w.innerHTML = '';
+  let sum = 0, max = -1, win = null;
+  if (p && Array.isArray(p.options)){
+    p.options.forEach(o => {
+      sum += (o.votes || 0);
+      if ((o.votes || 0) > max){ max = (o.votes || 0); win = o; }
+    });
+    p.options.forEach(o => {
+      const d = document.createElement('div');
+      d.className = 'opt';
+      d.innerHTML = `<div class='row' style='justify-content:space-between'>
+        <div>${o.text}</div><b>${o.votes||0}</b></div>`;
+      w.appendChild(d);
+    });
+  }
+
+  // No mostrar ganador inline si está cerrada (el modal ya lo enseña)
+  const tieEl = q('#tie');
+  const winEl = q('#win');
+
+  if (winEl) winEl.innerHTML = (isClosedLocal)
+    ? '' // oculto cuando está cerrada (modal se encarga)
+    : (sum ? `<small class='pill'>Votos totales: ${sum}</small>` : `<small class='pill'>Aún no hay votos</small>`);
+
+  if (tieEl) tieEl.style.display = 'none'; // el modal se ocupa de empates al cerrar
+
+  // Desactivar botón "Cerrar" si no está activa (también en SB)
+  setCloseBtnDisabled(id);
+}
+async function setCloseBtnDisabled(planId){
+  const btn = document.querySelector('#res button[onclick="closeNow()"]');
+  if(!btn) return;
+
+  try{
+    if (useSB()){
+      // Estado “real” en Supabase
+      const r = await (window.SB_VOTES?.fetchPlan?.(planId));
+      const p = r?.data || null;
+      const active = !!(p && !p.closed && !p.cancelled && new Date(p.deadline_ts) > new Date());
+      btn.disabled = !active;
+      btn.title = active ? 'Finalizar votación' : 'Votación no activa';
+    } else {
+      // Fallback local
+      const polls = U(K.POLLS,{});
+      const p = polls[planId];
+      const active = !!(p && !p.closed && !p.cancelled && now() < p.deadline);
+      btn.disabled = !active;
+      btn.title = active ? 'Finalizar votación' : 'Votación no activa';
+    }
+  }catch(e){
+    console.warn('[setCloseBtnDisabled]', e);
+    btn.disabled = true;
+    btn.title = 'Votación no activa';
   }
 }
+
+/* Si en algún punto quieres garantizar que, al entrar en la vista de resultados,
+   no se muestre ganador inline cuando ya está cerrada (por seguridad también con SB):
+*/
+async function hideWinnerInlineIfClosed(planId){
+  const winEl = q('#win'), tieEl = q('#tie');
+  if(!winEl) return;
+
+  let closed = false;
+  try{
+    if (useSB()){
+      const r = await (window.SB_VOTES?.fetchPlan?.(planId));
+      const p = r?.data || null;
+      closed = !!(p && (p.closed || p.cancelled || new Date(p.deadline_ts) <= new Date()));
+    } else {
+      const polls = U(K.POLLS,{});
+      const p = polls[planId];
+      closed = !!(p && (p.closed || p.cancelled || now() >= p.deadline));
+    }
+  }catch(_){}
+
+  if (closed){
+    winEl.innerHTML = '';
+    if (tieEl) tieEl.style.display='none';
+  }
+}
+
 async function closeNow(){
   const id = (location.hash.split('/')[2] || '').trim();
   if (!id) return;
+
+// === Helpers SB/local ===
+function useSB(){ return !!window.SB; }
 
   // === Ruta Supabase ===
   if (useSB()){
