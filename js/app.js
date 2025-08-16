@@ -524,36 +524,36 @@ async function renderVote(){
     w.innerHTML = `<div class="opt"><small class="pill">Cargando opciones…</small></div>`;
 
     const or = await window.SB_VOTES.fetchOptionsWithCounts(id);
-    const options = or?.data || [];
-    w.innerHTML = '';
+const options = or?.data || [];
+w.innerHTML = '';
 
-    const disabled = !!(plan.closed || plan.cancelled || new Date(plan.deadline_ts) <= new Date());
+const disabled = !!(plan.closed || plan.cancelled || new Date(plan.deadline_ts) <= new Date());
 
-    options.forEach(o=>{
-      const d = document.createElement('div');
-      d.className = 'opt';
-      d.innerHTML = `
-        <div class="row">
-          <div style="flex:1">${o.text}</div>
-          <button class="btn s p">${disabled ? 'Cerrada' : 'Votar'}</button>
-        </div>`;
-      const b = d.querySelector('button');
+options.forEach(o=>{
+  const optId = (o.option_id ?? o.id); // <-- usar siempre option_id si existe
+  const d = document.createElement('div');
+  d.className = 'opt';
+  d.innerHTML = `
+    <div class="row">
+      <div style="flex:1">${o.text}</div>
+      <button class="btn s p">${disabled ? 'Cerrada' : 'Votar'}</button>
+    </div>`;
+  const b = d.querySelector('button');
+  b.disabled = disabled;
+  b.onclick = async ()=>{
+    try{
+      b.disabled = true; // voto optimista
+      await window.SB_VOTES.castVote(id, optId); // <-- AQUI el fix
+      b.textContent = '¡Votado!';
+      setTimeout(()=>{ b.textContent = 'Votar'; b.disabled = disabled; }, 600);
+    }catch(err){
+      console.error('[vote] error', err);
+      alert(err?.message || 'No se pudo registrar tu voto');
       b.disabled = disabled;
-      b.onclick = async ()=>{
-        try{
-          // voto optimista
-          b.disabled = true;
-          await window.SB_VOTES.castVote(id, o.id);
-          b.textContent = '¡Votado!';
-          setTimeout(()=>{ b.textContent = 'Votar'; b.disabled = disabled; }, 600);
-        }catch(err){
-          console.error('[vote] error', err);
-          alert(err?.message || 'No se pudo registrar tu voto');
-          b.disabled = disabled;
-        }
-      };
-      w.appendChild(d);
-    });
+    }
+  };
+  w.appendChild(d);
+});
 
     // contador restante
     clearInterval(tmr);
