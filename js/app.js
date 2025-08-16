@@ -567,22 +567,51 @@ function renderRes(){
   }
 }
 async function closeNow(){
-  const id=location.hash.split('/')[2];
-  const polls=U(K.POLLS,{});
-  const p=polls[id];
+  const id = (location.hash.split('/')[2] || '').trim();
+  if (!id) return;
+
+  // === Ruta Supabase ===
+  if (useSB()){
+    try{
+      // 1) Marca el plan como cerrado
+      if (window.SB_VOTES && typeof window.SB_VOTES.closePlan === 'function'){
+        const res = await window.SB_VOTES.closePlan(id);
+        if (res?.error) throw res.error;
+      } else if (window.SB) {
+        const { error } = await window.SB
+          .from('plans')
+          .update({ closed: true })
+          .eq('id', id);
+        if (error) throw error;
+      } else {
+        throw new Error('Supabase no disponible');
+      }
+
+      // 2) Muestra modal ganador (lee opciones desde la vista con counts)
+      await showWinnerModalSB(id);
+
+    }catch(err){
+      console.error('[closeNow SB]', err);
+      alert(err?.message || 'No se pudo cerrar la votación.');
+    }
+    return;
+  }
+
+  // === Ruta LOCAL (fallback con localStorage) ===
+  const polls=U(K.POLLS,{}), p=polls[id];
   if(!p) return;
 
   p.closed=true;
   polls[id]=p;
   SVE(K.POLLS,polls);
 
-  // refresca resultado en la vista (por si vuelves a ella)
   try { renderRes(); } catch(_) {}
 
-  // muestra modal ganador con CTA compartir
+  // Modal con ganador (local)
   try { showWinnerModal(p); } catch(e){ console.warn('[WinnerModal]', e); }
-  
 }
+
+
 function tRand(){
   const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
   if(!p || !tie.length) return;
@@ -906,6 +935,79 @@ function ensureWinnerModal(){
   }
   return m;
 }
+
+// === Winner Modal (Supabase) ===
+async function showWinnerModalSB(planId){
+  const m = ensureWinnerModal();
+  const body = m.querySelector('#mw-body');
+  const titleEl = m.querySelector('#mw-title');
+
+  // Carga plan + opciones con conteo
+  let plan = null, rows = [];
+  try{
+    const pr = await window.SB_VOTES.fetchPlan(planId);
+    plan = pr?.data || null;
+  }catch(_){}
+  try{
+    const lr = await window.SB_VOTES.fetchOptionsWithCounts(planId);
+    rows = lr?.data || [];
+  }catch(_){}
+
+  // Calcula ganadores
+  let max = -1, winners = [], total = 0;
+  rows.forEach(r => {
+    const v = r.votes || 0;
+    total += v;
+    if (v > max){ max = v; winners = [r]; }
+    else if (v === max){ winners.push(r); }
+  });
+
+  m.dataset.planId = planId;
+
+  if (!rows.length){
+    titleEl.textContent = 'Resultado';
+    body.innerHTML = `<div class="opt"><small class="pill">No hay opciones</small></div>`;
+    m.dataset.shareText = 'Consulta el resultado del plan en Planazoo';
+  } else if (winners.length === 0){
+    titleEl.textContent = 'Resultado';
+    body.innerHTML = `<div class="opt"><small class="pill">Aún no hay votos</small></div>`;
+    m.dataset.shareText = 'Consulta el resultado del plan en Planazoo';
+  } else if (winners.length === 1){
+    titleEl.textContent = '🎉 Ganador';
+    body.innerHTML = `
+      <div class="opt" style="text-align:center">
+        <div class="vote-card winner" style="margin:8px auto">
+          <div class="vote-title">${winners[0].text}</div>
+        </div>
+        <small class="pill">Total votos: ${total}</small>
+      </div>`;
+    m.dataset.shareText = `Ganó: ${winners[0].text}.`;
+    triggerConfetti();
+  } else {
+    titleEl.textContent = '⚖️ Empate';
+    body.innerHTML = `
+      <div class="opt">
+        <b>Empate detectado</b>
+        <ul style="margin-top:6px">${winners.map(w=>`<li>${w.text}</li>`).join('')}</ul>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" onclick="tRand()">Desempate aleatorio</button>
+          <button class="btn" onclick="tManual()">Elegir manual</button>
+        </div>
+      </div>`;
+    m.dataset.shareText = `Hay empate entre: ${winners.map(w=>w.text).join(' · ')}.`;
+  }
+
+  // Abre modal y bloquea scroll de fondo
+  m.style.display='flex';
+  document.body.classList.add('modal-open');
+
+  // Opcional: manda al tab de resultados detrás del modal
+  try {
+    location.hash = '#/res/' + planId;
+    typeof renderRes === 'function' && renderRes();
+  } catch(_){}
+}
+
 function hideWinnerModal(){
   const m=document.getElementById('mw');
   if(m){ m.style.display='none'; document.body.classList.remove('modal-open'); }
