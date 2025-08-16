@@ -530,7 +530,7 @@ w.innerHTML = '';
 const disabled = !!(plan.closed || plan.cancelled || new Date(plan.deadline_ts) <= new Date());
 
 options.forEach(o=>{
-  const optId = (o.option_id ?? o.id); // <-- usar siempre option_id si existe
+  const optId = (o.option_id ?? o.id); // IMPORTANTE: usar option_id si existe
   const d = document.createElement('div');
   d.className = 'opt';
   d.innerHTML = `
@@ -542,10 +542,14 @@ options.forEach(o=>{
   b.disabled = disabled;
   b.onclick = async ()=>{
     try{
-      b.disabled = true; // voto optimista
-      await window.SB_VOTES.castVote(id, optId); // <-- AQUI el fix
-      b.textContent = '¡Votado!';
-      setTimeout(()=>{ b.textContent = 'Votar'; b.disabled = disabled; }, 600);
+      b.disabled = true; // bloqueo optimista
+      await window.SB_VOTES.castVote(id, optId); // <-- aquí ya enviamos el option_id correcto
+
+      // Ir directo a resultados:
+      location.hash = '#/res/'+id;
+      if (typeof renderRes === 'function') renderRes();
+      document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+      document.getElementById('res')?.classList.add('on');
     }catch(err){
       console.error('[vote] error', err);
       alert(err?.message || 'No se pudo registrar tu voto');
@@ -813,50 +817,40 @@ async function hideWinnerInlineIfClosed(planId){
 }
 
 async function closeNow(){
-  const id = (location.hash.split('/')[2] || '').trim();
+  const id = location.hash.split('/')[2];
   if (!id) return;
-  // === Helpers SB/local ===
-  // (Usamos la const useSB() global declarada al inicio)
 
-  // === Ruta Supabase ===
-  if (useSB()){
-    try{
-      // 1) Marca el plan como cerrado
-      if (window.SB_VOTES && typeof window.SB_VOTES.closePlan === 'function'){
-        const res = await window.SB_VOTES.closePlan(id);
-        if (res?.error) throw res.error;
-      } else if (window.SB) {
-        const { error } = await window.SB
-          .from('plans')
-          .update({ closed: true })
-          .eq('id', id);
-        if (error) throw error;
-      } else {
-        throw new Error('Supabase no disponible');
-      }
+  // Si tienes helper para detectar SB, úsalo; si no, inference por window.SB
+  const isSB = !!window.SB;
 
-      // 2) Muestra modal ganador (lee opciones desde la vista con counts)
-      await showWinnerModalSB(id);
+  if (isSB){
+    // Cerrar en Supabase
+    const up = await SB.from('plans').update({ closed:true }).eq('id', id).select().single();
+    if (up.error){ alert(up.error.message || 'Error al cerrar'); return; }
 
-    }catch(err){
-      console.error('[closeNow SB]', err);
-      alert(err?.message || 'No se pudo cerrar la votación.');
-    }
-    return;
+    // Recalcular ganador desde la vista agregada
+    const or = await SB
+      .from('plan_options_with_counts')
+      .select('*')
+      .eq('plan_id', id)
+      .order('created_at', { ascending:true });
+    const rows = or?.data || [];
+    const max = rows.length ? Math.max(...rows.map(r=>r.votes||0)) : -1;
+    const win = rows.find(r => (r.votes||0) === max);
+
+    // Refrescar resultados y mostrar modal con confeti
+    if (typeof renderRes === 'function') renderRes();
+    window.showWinnerModal?.(win?.text || '—', { celebrate:true });
+
+  } else {
+    // Modo local (localStorage)
+    const polls=U(K.POLLS,{}), p=polls[id]; if(!p){ alert('No existe'); return; }
+    p.closed=true; polls[id]=p; SVE(K.POLLS,polls);
+    let max=-1, win=null;
+    p.options.forEach(o=>{ const v=o.votes||0; if(v>max){ max=v; win=o; } });
+    if (typeof renderRes === 'function') renderRes();
+    window.showWinnerModal?.(win?.text || '—', { celebrate:true });
   }
-
-  // === Ruta LOCAL (fallback con localStorage) ===
-  const polls=U(K.POLLS,{}), p=polls[id];
-  if(!p) return;
-
-  p.closed=true;
-  polls[id]=p;
-  SVE(K.POLLS,polls);
-
-  try { renderRes(); } catch(_) {}
-
-  // Modal con ganador (local)
-  try { showWinnerModal(p); } catch(e){ console.warn('[WinnerModal]', e); }
 }
 
 // === SB helpers / realtime ===
@@ -1104,6 +1098,88 @@ function burstConfetti(count=120){
     document.body.appendChild(d);
     setTimeout(()=>{ d.remove(); }, 3500);
   }
+}
+// === Confeti + Modal ganador (helpers one-shot) ===
+if (!window.ensureConfettiCanvas) {
+  (function(){
+    let __cfRAF = null;
+    function ensureConfettiCanvas(){
+      let c = document.getElementById('confetti');
+      if(!c){
+        c = document.createElement('canvas');
+        c.id = 'confetti';
+        Object.assign(c.style, {
+          position:'fixed', inset:'0', pointerEvents:'none', zIndex:'9999'
+        });
+        document.body.appendChild(c);
+        const fit=()=>{ c.width=innerWidth; c.height=innerHeight; };
+        window.addEventListener('resize', fit); fit();
+      }
+      return c;
+    }
+    function fireConfetti(duration=1200, count=180){
+      const c=ensureConfettiCanvas(), ctx=c.getContext('2d');
+      const pieces = Array.from({length:count}, ()=>({
+        x: Math.random()*c.width,
+        y: -20 - Math.random()*c.height*0.5,
+        r: 2+Math.random()*4,
+        vx: -2+Math.random()*4,
+        vy: 2+Math.random()*3,
+        a: Math.random()*Math.PI*2,
+        va: -0.2+Math.random()*0.4
+      }));
+      const start=performance.now();
+      cancelAnimationFrame(__cfRAF);
+      (function tick(t){
+        ctx.clearRect(0,0,c.width,c.height);
+        pieces.forEach(p=>{
+          p.x+=p.vx; p.y+=p.vy; p.a+=p.va;
+          ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a);
+          ctx.fillStyle = `hsl(${(p.x+p.y)%360},100%,60%)`;
+          ctx.fillRect(-p.r, -p.r, p.r*2, p.r*2);
+          ctx.restore();
+          if(p.y>c.height+20){ p.y=-20; p.x=Math.random()*c.width; }
+        });
+        if(t-start<duration){ __cfRAF=requestAnimationFrame(tick); }
+        else ctx.clearRect(0,0,c.width,c.height);
+      })(start);
+    }
+    function ensureWinnerModal(){
+      let mw=document.getElementById('mw');
+      if(!mw){
+        mw = document.createElement('div');
+        mw.id='mw'; mw.className='modal';
+        mw.innerHTML = `
+          <div class="sheet">
+            <div class="row">
+              <h3 id="mw_title">Resultado</h3>
+              <div style="flex:1"></div>
+              <button class="btn s" id="mw_close">Cerrar</button>
+            </div>
+            <div id="mw_body" style="margin-top:8px"></div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn p" id="mw_home">Volver al inicio</button>
+            </div>
+          </div>`;
+        document.body.appendChild(mw);
+        mw.querySelector('#mw_close').onclick = ()=>{ mw.style.display='none'; };
+        mw.querySelector('#mw_home').onclick  = ()=>{ mw.style.display='none'; tab('home'); };
+      }
+      return mw;
+    }
+    function showWinnerModal(text, {celebrate=false}={}){
+      const mw=ensureWinnerModal();
+      mw.querySelector('#mw_body').innerHTML = `
+        <h2 style="margin:8px 0">🎉 Ganador: ${text||'—'}</h2>
+        <small class="pill">¡Buen plan!</small>`;
+      mw.style.display='flex';
+      if (celebrate) fireConfetti();
+    }
+    // expone al global
+    window.ensureConfettiCanvas = ensureConfettiCanvas;
+    window.fireConfetti = fireConfetti;
+    window.showWinnerModal = showWinnerModal;
+  })();
 }
 
 /* ====== Init ====== */
