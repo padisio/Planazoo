@@ -488,12 +488,85 @@ async function renderResSB(){
 
 /* ====== Votar / Resultado / Compartir (local) ====== */
 let tmr=null, tie=[];
-function renderVote(){
-  if (useSB()) return renderVoteSB();
 
-  const id=location.hash.split('/')[2];
-  const polls=U(K.POLLS,{});
-  const p=polls[id];
+async function renderVote(){
+  const id = currentPlanId();
+  if(!id){ alert('No existe'); tab('home'); return; }
+
+  // Habilita/oculta nombre según sesión
+  const nameRow = q('#vn')?.closest('.row');
+  if (useSB()){
+    if (nameRow) nameRow.style.display = 'none';
+  } else {
+    if (nameRow) nameRow.style.display = '';
+  }
+
+  if (useSB()){
+    // ===== Supabase =====
+    const pr = await window.SB_VOTES.fetchPlan(id);
+    const plan = pr?.data;
+    if(!plan){ alert('No existe'); tab('home'); return; }
+
+    q('#vt').textContent = 'Vota: ' + plan.title;
+    q('#collab').style.display = plan.collab ? 'inline-block' : 'none';
+    q('#link').textContent = location.origin + location.pathname + '#/votar/' + id;
+
+    const w = q('#vlist');
+    w.innerHTML = `<div class="opt"><small class="pill">Cargando opciones…</small></div>`;
+
+    const or = await window.SB_VOTES.fetchOptionsWithCounts(id);
+    const options = or?.data || [];
+    w.innerHTML = '';
+
+    const disabled = !!(plan.closed || plan.cancelled || new Date(plan.deadline_ts) <= new Date());
+
+    options.forEach(o=>{
+      const d = document.createElement('div');
+      d.className = 'opt';
+      d.innerHTML = `
+        <div class="row">
+          <div style="flex:1">${o.text}</div>
+          <button class="btn s p">${disabled ? 'Cerrada' : 'Votar'}</button>
+        </div>`;
+      const b = d.querySelector('button');
+      b.disabled = disabled;
+      b.onclick = async ()=>{
+        try{
+          // voto optimista
+          b.disabled = true;
+          await window.SB_VOTES.castVote(id, o.id);
+          b.textContent = '¡Votado!';
+          setTimeout(()=>{ b.textContent = 'Votar'; b.disabled = disabled; }, 600);
+        }catch(err){
+          console.error('[vote] error', err);
+          alert(err?.message || 'No se pudo registrar tu voto');
+          b.disabled = disabled;
+        }
+      };
+      w.appendChild(d);
+    });
+
+    // contador restante
+    clearInterval(tmr);
+    tmr = setInterval(()=>{
+      const rest = Math.max(0, new Date(plan.deadline_ts).getTime() - Date.now());
+      q('#rem').textContent = plan.closed ? 'Cerrada' : (Math.floor(rest/60000)+'m '+Math.floor((rest%60000)/1000)+'s');
+    }, 500);
+
+    // realtime: refresca opciones al cambiar votos
+    ensureVotesRealtime(id, async ()=>{
+      try{
+        const or2 = await window.SB_VOTES.fetchOptionsWithCounts(id);
+        // no hace falta redibujar todo si no muestras conteos en votar;
+        // si quisieras marcar selección del usuario, aquí lo harías.
+      }catch(_){}
+    });
+
+    return;
+  }
+
+  // ===== Fallback local (sin Supabase) =====
+  const polls=U(K.POLLS,{}), p=polls[id];
   if(!p){ alert('No existe'); tab('home'); return; }
   q('#vt').textContent='Vota: '+p.title;
   q('#collab').style.display=p.collab?'inline-block':'none';
@@ -513,12 +586,9 @@ function renderVote(){
       if(!n){ alert('Pon tu nombre'); return; }
       localStorage.setItem('pz_nombre',n);
       o.votes=(o.votes||0)+1;
-      const polls=U(K.POLLS,{});
-      polls[id]=p; SVE(K.POLLS,polls);
-      location.hash='#/res/'+id;
-      renderRes();
-      qq('.view').forEach(v=>v.classList.remove('on'));
-      q('#res').classList.add('on');
+      const polls=U(K.POLLS,{}); polls[id]=p; SVE(K.POLLS,polls);
+      location.hash='#/res/'+id; renderRes();
+      qq('.view').forEach(v=>v.classList.remove('on')); q('#res').classList.add('on');
     };
     w.appendChild(d);
   });
@@ -529,6 +599,8 @@ function renderVote(){
     q('#rem').textContent = (p.closed?'Cerrada':Math.floor(r/60000)+'m '+Math.floor((r%60000)/1000)+'s');
   },500);
 }
+
+
 function contrib(){
   if (useSB()) { alert('Añadir opciones desde app (SB) no implementado aún.'); return; }
   const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
@@ -542,53 +614,142 @@ function goRes(){
   renderRes();
   qq('.view').forEach(v=>v.classList.remove('on'));
   q('#res').classList.add('on');
-  const id = (location.hash.split('/')[2] || '').trim();
-  setCloseBtnDisabled(id); // asegura estado del botón
 }
 
-function renderRes(){
-  const id = (location.hash.split('/')[2] || '').trim();
+async function renderRes(){
+  const id = currentPlanId();
   if(!id){ alert('No existe'); tab('home'); return; }
 
-  // --- LOCAL (fallback) para construir la lista y contadores como ya hacías ---
-  const polls = U(K.POLLS,{});
-  const p = polls[id];
+  // header
+  const headerRow = q('#res .card .row');
+  // limpia posible botón anterior
+  const oldBack = document.getElementById('resBackBtn');
+  if (oldBack) oldBack.remove();
 
-  // Cabecera (estado)
-  q('#rt').textContent = 'Resultado: ' + (p?.title || '(plan)');
-  const isClosedLocal = p ? (p.closed || now() >= p.deadline || p.cancelled) : false;
-  q('#state').textContent = isClosedLocal ? 'Cerrada' : 'Abierta';
+  let isClosed = false;
+  let title = '(plan)';
+  let deadlineTs = null;
 
-  // Lista simple (si existe en local)
-  const w = q('#rlist'); w.innerHTML = '';
-  let sum = 0, max = -1, win = null;
-  if (p && Array.isArray(p.options)){
-    p.options.forEach(o => {
-      sum += (o.votes || 0);
-      if ((o.votes || 0) > max){ max = (o.votes || 0); win = o; }
-    });
-    p.options.forEach(o => {
+  const list = q('#rlist'); list.innerHTML = '';
+  const winEl = q('#win'); if (winEl) winEl.innerHTML = '';
+  const tieEl = q('#tie'); if (tieEl) tieEl.style.display = 'none';
+
+  if (useSB()){
+    // ===== Resultados desde Supabase =====
+    const [pr, or] = await Promise.all([
+      window.SB_VOTES.fetchPlan(id),
+      window.SB_VOTES.fetchOptionsWithCounts(id)
+    ]);
+    const plan = pr?.data;
+    const options = or?.data || [];
+
+    if(!plan){ alert('No existe'); tab('home'); return; }
+
+    title = plan.title || title;
+    deadlineTs = plan.deadline_ts;
+    isClosed = !!(plan.closed || plan.cancelled || new Date(plan.deadline_ts) <= new Date());
+
+    q('#rt').textContent = 'Resultado: ' + title;
+    q('#state').textContent = isClosed ? 'Cerrada' : 'Abierta';
+
+    // pinta lista con votos
+    let sum = 0, max = -1;
+    options.forEach(o => { sum += (o.votes||0); if ((o.votes||0) > max) max = (o.votes||0); });
+    options.forEach(o=>{
       const d = document.createElement('div');
       d.className = 'opt';
       d.innerHTML = `<div class='row' style='justify-content:space-between'>
         <div>${o.text}</div><b>${o.votes||0}</b></div>`;
-      w.appendChild(d);
+      list.appendChild(d);
     });
+
+    // botón ← Volver a votar si está abierta
+    if (!isClosed && headerRow){
+      const back = document.createElement('button');
+      back.id = 'resBackBtn';
+      back.className = 'btn s';
+      back.textContent = '← Volver a votar';
+      back.onclick = ()=>{
+        location.hash = '#/votar/'+id;
+        qq('.view').forEach(v=>v.classList.remove('on'));
+        q('#votar').classList.add('on');
+        renderVote();
+      };
+      headerRow.insertBefore(back, headerRow.firstChild);
+    }
+
+    // no mostramos ganador inline si está cerrada (lo saca el modal al “Cerrar”)
+    if (!isClosed){
+      if (winEl){
+        winEl.innerHTML = sum ? `<small class='pill'>Votos totales: ${sum}</small>`
+                              : `<small class='pill'>Aún no hay votos</small>`;
+      }
+    } else {
+      if (winEl) winEl.innerHTML = '';
+    }
+
+    // desactivar botón Cerrar si no activa
+    await setCloseBtnDisabled(id);
+    // realtime resultados
+    ensureVotesRealtime(id, async ()=>{
+      try{
+        const or2 = await window.SB_VOTES.fetchOptionsWithCounts(id);
+        const options2 = or2?.data || [];
+        list.innerHTML = '';
+        options2.forEach(o=>{
+          const d = document.createElement('div');
+          d.className='opt';
+          d.innerHTML = `<div class='row' style='justify-content:space-between'>
+            <div>${o.text}</div><b>${o.votes||0}</b></div>`;
+          list.appendChild(d);
+        });
+      }catch(_){}
+    });
+
+    return;
   }
 
-  // No mostrar ganador inline si está cerrada (el modal ya lo enseña)
-  const tieEl = q('#tie');
-  const winEl = q('#win');
+  // ===== Fallback local =====
+  const polls=U(K.POLLS,{}), p=polls[id];
+  if(!p){ alert('No existe'); tab('home'); return; }
 
-  if (winEl) winEl.innerHTML = (isClosedLocal)
-    ? '' // oculto cuando está cerrada (modal se encarga)
-    : (sum ? `<small class='pill'>Votos totales: ${sum}</small>` : `<small class='pill'>Aún no hay votos</small>`);
+  q('#rt').textContent='Resultado: '+(p.title||title);
+  isClosed = (p.closed||now()>=p.deadline||p.cancelled);
+  q('#state').textContent = isClosed ? 'Cerrada' : 'Abierta';
 
-  if (tieEl) tieEl.style.display = 'none'; // el modal se ocupa de empates al cerrar
+  let sum=0, max=-1, win=null;
+  p.options.forEach(o=>{ sum+=(o.votes||0); if((o.votes||0)>max){max=o.votes||0; win=o;} });
+  p.options.forEach(o=>{
+    const d=document.createElement('div');
+    d.className='opt';
+    d.innerHTML=`<div class='row' style='justify-content:space-between'><div>${o.text}</div><b>${o.votes||0}</b></div>`;
+    list.appendChild(d);
+  });
 
-  // Desactivar botón "Cerrar" si no está activa (también en SB)
-  setCloseBtnDisabled(id);
+  if (!isClosed){
+    if (winEl) winEl.innerHTML = sum ? `<small class='pill'>Votos totales: ${sum}</small>`
+                                     : `<small class='pill'>Aún no hay votos</small>`;
+    // ← Volver a votar
+    if (headerRow){
+      const back = document.createElement('button');
+      back.id = 'resBackBtn';
+      back.className = 'btn s';
+      back.textContent = '← Volver a votar';
+      back.onclick = ()=>{
+        location.hash = '#/votar/'+id;
+        qq('.view').forEach(v=>v.classList.remove('on'));
+        q('#votar').classList.add('on');
+        renderVote();
+      };
+      headerRow.insertBefore(back, headerRow.firstChild);
+    }
+  } else {
+    if (winEl) winEl.innerHTML = '';
+  }
+
+  await setCloseBtnDisabled(id);
 }
+
 async function setCloseBtnDisabled(planId){
   const btn = document.querySelector('#res button[onclick="closeNow()"]');
   if(!btn) return;
@@ -690,6 +851,22 @@ function useSB(){ return !!window.SB; }
   try { showWinnerModal(p); } catch(e){ console.warn('[WinnerModal]', e); }
 }
 
+// === SB helpers / realtime ===
+function useSB(){ return !!(window.SB && window.SB_VOTES); }
+function currentPlanId(){ return (location.hash.split('/')[2] || '').trim(); }
+
+let __votesChannel = null;
+function ensureVotesRealtime(planId, onChange){
+  if (!useSB() || !window.SB || !window.SB.channel) return;
+  try{
+    if (__votesChannel) window.SB.removeChannel(__votesChannel);
+  }catch(_){}
+  __votesChannel = window.SB.channel('votes-'+planId)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'votes', filter:`plan_id=eq.${planId}` }, onChange)
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'votes', filter:`plan_id=eq.${planId}` }, onChange)
+    .on('postgres_changes', { event:'DELETE', schema:'public', table:'votes', filter:`plan_id=eq.${planId}` }, onChange)
+    .subscribe();
+}
 
 function tRand(){
   const id=location.hash.split('/')[2], polls=U(K.POLLS,{}), p=polls[id];
